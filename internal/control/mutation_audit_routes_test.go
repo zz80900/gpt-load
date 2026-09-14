@@ -1124,7 +1124,7 @@ func groupMutationAuditCases() []groupMutationAuditCase {
 				return groupAuditSeedRequest(
 					http.MethodPut,
 					"/models",
-					`{"models":[{"id":"gpt-4o-mini","alias_enabled":false}]}`,
+					`{"models":[{"id":"gpt-4o-mini","aliases":[]}]}`,
 				)(t, fixture)
 			},
 			rejected: func(
@@ -1142,7 +1142,7 @@ func groupMutationAuditCases() []groupMutationAuditCase {
 			database: groupAuditSeedRequest(
 				http.MethodPut,
 				"/models",
-				`{"models":[{"id":"gpt-4o-mini","alias_enabled":false}]}`,
+				`{"models":[{"id":"gpt-4o-mini","aliases":[]}]}`,
 			),
 		},
 		{
@@ -1240,7 +1240,7 @@ func groupMutationAuditCases() []groupMutationAuditCase {
 func groupCreateAuditBody(name string, upstreamURL string) string {
 	return fmt.Sprintf(
 		`{"name":%q,"channel_id":"openai_compatible","connection_type":"api_key","params":{"base_url":%q},`+
-			`"models":[{"id":"gpt-4o","alias_enabled":false}],`+
+			`"models":[{"id":"gpt-4o","aliases":[]}],`+
 			`"credentials":"sk-audit-upstream"}`,
 		name,
 		upstreamURL,

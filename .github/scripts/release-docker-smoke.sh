@@ -307,7 +307,7 @@ group_response="$(
         channel_id:"openai_compatible",
         connection_type:"api_key",
         params:{base_url:process.argv[1]},
-        models:[{id:"task13-release-model",alias:"",alias_enabled:false}],
+        models:[{id:"task13-release-model",aliases:[]}],
         credentials:process.argv[2],
         confirm_same_target:false,
       }));
