@@ -1,0 +1,92 @@
+name: Sync Upstream
+
+# 定期把上游 tbphp/gpt-load 的 main 合并进本 fork，并在合并带来 Go / web 源码
+# 变更时自动触发私有镜像发布。
+#
+# 前置条件：仓库需配置 SYNC_UPSTREAM_TOKEN 密钥（带 repo + workflow scope 的 PAT）。
+# 上游会改动 .github/workflows/，而 GITHUB_TOKEN 无权推送这类文件；缺少该密钥时
+# 同步步骤会直接失败并说明原因，不会静默吞掉。
+on:
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: '即使无 Go/web 源码变更也触发镜像发布'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # 每 6 小时；避开整点，错开 GitHub 的调度高峰。
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_UPSTREAM_TOKEN || github.token }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge upstream
+        id: sync
+        env:
+          SYNC_UPSTREAM_TOKEN: ${{ secrets.SYNC_UPSTREAM_TOKEN }}
+        run: .github/scripts/sync-upstream.sh
+
+      - name: Report conflict
+        if: ${{ steps.sync.outputs.outcome == 'conflicted' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFLICT_FILES: ${{ steps.sync.outputs.files }}
+        run: |
+          set -euo pipefail
+          # 每 6 小时跑一次，冲突会持续存在；已有未关闭的同类 issue 时追加评论，
+          # 避免刷出一堆重复 issue。
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search '上游同步冲突 in:title' --json number --jq '.[0].number // empty')"
+          body="$(printf '自动同步上游时出现合并冲突，需要人工处理。\n\n冲突文件：\n\n```\n%s\n```\n\n本地处理：\n\n```bash\ngit fetch upstream\ngit merge upstream/main\n# 逐个解决冲突后\ngit push origin main\n```\n\n运行记录：%s/%s/actions/runs/%s\n' \
+            "$CONFLICT_FILES" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "上游同步冲突：需要人工处理" --body "$body"
+          fi
+          exit 1
+
+      - name: Push merged changes
+        if: ${{ steps.sync.outputs.outcome == 'merged' }}
+        run: git push origin "HEAD:${{ github.event.repository.default_branch }}"
+
+      - name: Publish image
+        if: ${{ steps.sync.outputs.outcome == 'merged' && (steps.sync.outputs.code_changed == 'true' || inputs.force_publish) }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 版本号在既有的 zz.N 序列上递增，与手动发布保持同一命名规则。
+          latest="$(git tag -l 'v2.0.0-zz.*' | sed 's/.*zz\.//' | sort -n | tail -1)"
+          next="$(( ${latest:-0} + 1 ))"
+          tag="v2.0.0-zz.${next}"
+          git tag "$tag"
+          git push origin "$tag"
+          gh workflow run private-image.yml --repo "$GITHUB_REPOSITORY" \
+            -f version="$tag" -f push_latest=true
+          echo "已同步并触发镜像发布：$tag"
