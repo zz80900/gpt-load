@@ -149,9 +149,9 @@ export interface GroupSettingsDto {
 
 export interface GroupModelItemDto {
   id: string
-  alias: string
-  alias_enabled: boolean
-  client_model: string
+  aliases: string[]
+  /** [id, ...aliases]，服务端权威顺序，客户端可用的全部名称。 */
+  client_models: string[]
   pricing_status: ModelPricingStatus
 }
 

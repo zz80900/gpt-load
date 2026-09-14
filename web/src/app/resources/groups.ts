@@ -74,13 +74,7 @@ const groupSettingsFields = [
   'proxy',
 ] as const
 const groupModelsFields = ['items', 'total', 'pending'] as const
-const groupModelItemFields = [
-  'id',
-  'alias',
-  'alias_enabled',
-  'client_model',
-  'pricing_status',
-] as const
+const groupModelItemFields = ['id', 'aliases', 'client_models', 'pricing_status'] as const
 const groupCollectionFields = ['observed_at_ms', 'summary', 'items', 'pagination'] as const
 const groupCollectionSummaryFields = ['total', 'available', 'unavailable', 'disabled'] as const
 const groupCollectionItemFields = [
@@ -195,8 +189,7 @@ export interface ModelDiscoveryResult {
 
 export interface GroupModelUpdateDto {
   id: string
-  alias: string
-  alias_enabled: boolean
+  aliases: string[]
 }
 
 export interface GroupModelsReplaceRequest {
@@ -444,18 +437,25 @@ export function projectGroupSettings(value: unknown): GroupSettingsDto {
 function projectGroupModelItem(value: unknown): GroupModelItemDto {
   const record = projectRecord(value)
   assertNoSecretLikeFields(record, groupModelItemFields)
-  const alias = projectString(record.alias, { allowEmpty: true })
-  const aliasEnabled = projectBoolean(record.alias_enabled)
   const id = projectNonBlankString(record.id)
-  const clientModel = projectNonBlankString(record.client_model)
-  if ((alias !== '') !== aliasEnabled || clientModel !== (aliasEnabled ? alias : id)) {
+  const aliases = projectArray(record.aliases, (item) => projectNonBlankString(item))
+  const clientModels = projectArray(record.client_models, (item) => projectNonBlankString(item))
+  // 不变量：别名互不重复且不等于 ID；client_models 恒为 [id, ...aliases]。
+  // 服务端与这里必须同规则，否则它拒绝的配置会被前端判为合法并反复重试保存。
+  if (new Set(aliases).size !== aliases.length || aliases.includes(id)) {
+    throw new InvalidResponseError()
+  }
+  if (
+    clientModels.length !== aliases.length + 1 ||
+    clientModels[0] !== id ||
+    aliases.some((alias, index) => clientModels[index + 1] !== alias)
+  ) {
     throw new InvalidResponseError()
   }
   return {
     id,
-    alias,
-    alias_enabled: aliasEnabled,
-    client_model: clientModel,
+    aliases,
+    client_models: clientModels,
     pricing_status: projectEnum(record.pricing_status, ['pending', 'configured'] as const),
   }
 }
@@ -469,7 +469,9 @@ export function projectGroupModels(value: unknown): GroupModelsDto {
   if (
     items.length !== total ||
     pending > total ||
-    new Set(items.map(({ client_model }) => client_model)).size !== items.length ||
+    // 一个对外名称（ID 或别名）只能属于一个上游模型，因此所有名称合起来不得重复。
+    new Set(items.flatMap(({ client_models }) => client_models)).size !==
+      items.reduce((count, item) => count + item.client_models.length, 0) ||
     items.filter(({ pricing_status }) => pricing_status === 'pending').length !== pending
   ) {
     throw new InvalidResponseError()
@@ -981,7 +983,8 @@ export function cacheGroupModels(
   queryClient.setQueryData<GroupSummaryDto>(controlQueryKeys.groups.summary(groupID), (summary) =>
     summary === undefined ? summary : { ...summary, model_count: models.total },
   )
-  const clientModels = models.items.map(({ client_model: clientModel }) => clientModel)
+  // 模型选项展开为全部对外名称（ID + 别名），与后端 group options 的口径一致。
+  const clientModels = models.items.flatMap(({ client_models: names }) => names)
   queryClient.setQueryData<GroupOptionDto[]>(controlQueryKeys.groups.options(), (options) =>
     options?.map((option) =>
       option.id === groupID ? { ...option, models: clientModels } : option,

@@ -345,7 +345,6 @@ const modelValidationSummary = computed(() =>
   [
     modelConflicts.value.length ? t('import.models.conflictSummary') : '',
     modelValidity.value.emptyIDIndexes.size ? t('import.models.manualIdRequired') : '',
-    modelValidity.value.emptyAliasIndexes.size ? t('import.models.emptyAliasSummary') : '',
   ]
     .filter(Boolean)
     .join(' · '),
@@ -553,10 +552,9 @@ const aliasEditorLabels = computed<ModelAliasEditorLabels>(() => ({
   search: t('import.models.search'),
   searchLabel: t('import.models.searchLabel'),
   clearSearch: t('import.models.clearSearch'),
-  aliasEnabledFor: (id) => t('import.models.aliasEnabledFor', { id }),
   aliasFor: (id) => t('import.models.aliasFor', { id }),
   aliasPlaceholder: t('import.models.aliasPlaceholder'),
-  aliasRequired: t('import.models.aliasRequired'),
+  removeAliasFor: (alias: string) => t('import.models.removeAliasFor', { alias }),
   removeFor: (id) => t('import.models.removeFor', { id }),
   manualId: t('import.models.manualId'),
   manualIdRequired: t('import.models.manualIdRequired'),
@@ -782,8 +780,7 @@ function createManualRow(): ModelDraftItem {
     name: '',
     sources: [],
     pricing_status: 'pending',
-    alias: '',
-    alias_enabled: false,
+    aliases: [],
     editable_id: true,
     key: nextModelKey++,
   }

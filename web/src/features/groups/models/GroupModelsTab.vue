@@ -107,30 +107,17 @@ const conflicts = computed(() =>
     ? serverConflicts.value
     : findModelNameConflicts(normalizedModels(draft.value)),
 )
-const emptyAliasIndexes = computed(
-  () =>
-    new Set(
-      draft.value.flatMap((item, index) =>
-        item.alias_enabled && !item.alias.trim() ? [index] : [],
-      ),
-    ),
-)
 const emptyIDIndexes = computed(
   () => new Set(draft.value.flatMap((item, index) => (!item.id.trim() ? [index] : []))),
 )
 const invalidRowCount = computed(
   () =>
-    new Set([
-      ...conflicts.value.flatMap((item) => item.indexes),
-      ...emptyAliasIndexes.value,
-      ...emptyIDIndexes.value,
-    ]).size,
+    new Set([...conflicts.value.flatMap((item) => item.indexes), ...emptyIDIndexes.value]).size,
 )
 const validationSummary = computed(() =>
   [
     conflicts.value.length ? t('group.modelEditor.conflictSummary') : '',
     emptyIDIndexes.value.size ? t('group.modelEditor.manualIdRequired') : '',
-    emptyAliasIndexes.value.size ? t('group.modelEditor.emptyAliasSummary') : '',
   ]
     .filter(Boolean)
     .join(' · '),
@@ -148,8 +135,7 @@ const canSave = computed(
     dirty.value &&
     pending.value === null &&
     conflicts.value.length === 0 &&
-    emptyIDIndexes.value.size === 0 &&
-    emptyAliasIndexes.value.size === 0,
+    emptyIDIndexes.value.size === 0,
 )
 const pendingPricingCount = computed(
   () => draft.value.filter((item) => item.pricing_status === 'pending').length,
@@ -179,10 +165,9 @@ const aliasEditorLabels = computed<ModelAliasEditorLabels>(() => ({
   search: t('group.modelEditor.searchPlaceholder'),
   searchLabel: t('group.modelEditor.searchLabel'),
   clearSearch: t('group.modelEditor.searchClear'),
-  aliasEnabledFor: (id) => t('group.modelEditor.aliasEnabledFor', { id }),
   aliasFor: (id) => t('group.modelEditor.aliasFor', { id }),
   aliasPlaceholder: t('group.modelEditor.aliasPlaceholder'),
-  aliasRequired: t('group.modelEditor.aliasRequired'),
+  removeAliasFor: (alias: string) => t('group.modelEditor.removeAliasFor', { alias }),
   removeFor: (id) => t('group.modelEditor.removeFor', { id }),
   manualId: t('group.modelEditor.manualId'),
   manualIdRequired: t('group.modelEditor.manualIdRequired'),
@@ -332,8 +317,7 @@ function createManualRow(): ModelDraftItem {
     id: '',
     name: '',
     sources: [],
-    alias: '',
-    alias_enabled: false,
+    aliases: [],
     pricing_status: 'pending',
     editable_id: true,
     key: nextKey++,
@@ -386,8 +370,7 @@ function confirmCandidates(selectedCandidates: ModelCandidate[]): void {
     id: candidate.id,
     name: candidate.name,
     sources: [...candidate.sources],
-    alias: '',
-    alias_enabled: false,
+    aliases: [],
     pricing_status: candidate.pricing_status,
     key: nextKey++,
   }))

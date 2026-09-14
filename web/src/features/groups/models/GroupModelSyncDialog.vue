@@ -118,9 +118,9 @@ function setMode(value: string): void {
           <ul v-if="removalPreview.length">
             <li v-for="model in removalPreview" :key="model.key">
               <code>{{ model.id }}</code>
-              <template v-if="model.alias_enabled">
+              <template v-if="model.aliases.length">
                 <span aria-hidden="true">→</span>
-                <code>{{ model.alias }}</code>
+                <code>{{ model.aliases.join('、') }}</code>
               </template>
             </li>
           </ul>

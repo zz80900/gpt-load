@@ -48,7 +48,7 @@ const isSubscription = computed(() => props.connectionType === 'subscription')
 // 验活直接把该值当成上游模型 ID 使用，所以候选取 id 而不是可能被别名替换的 client_model。
 const validationModelOptions = computed(() =>
   [...props.models]
-    .map(({ id, alias, alias_enabled }) => ({ id, alias: alias_enabled ? alias : '' }))
+    .map(({ id, aliases }) => ({ id, alias: aliases.join('、') }))
     .sort((left, right) => left.id.localeCompare(right.id)),
 )
 const weightValid = computed(

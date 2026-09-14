@@ -143,7 +143,7 @@ function createRows(value: ParameterOverrideRuleDto[]): RuleRow[] {
 const rows = ref<RuleRow[]>(createRows(props.modelValue))
 const moveAnnouncement = ref('')
 const modelSuggestions = computed(() =>
-  [...new Set(props.models.map(({ client_model }) => client_model))].sort((left, right) =>
+  [...new Set(props.models.flatMap(({ client_models }) => client_models))].sort((left, right) =>
     left.localeCompare(right),
   ),
 )

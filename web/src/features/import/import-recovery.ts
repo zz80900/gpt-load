@@ -22,7 +22,7 @@ export interface ImportRecoveryService {
 }
 
 interface ImportRecoveryRecord {
-  version: 8
+  version: 9
   expires_at: number
   draft: ImportRecoveryDraft
 }
@@ -44,8 +44,7 @@ function isModel(value: unknown): value is ModelDraftItem {
       'name',
       'sources',
       'pricing_status',
-      'alias',
-      'alias_enabled',
+      'aliases',
       'editable_id',
       'key',
     ]) &&
@@ -56,8 +55,8 @@ function isModel(value: unknown): value is ModelDraftItem {
     value.sources.every((source) => source === 'catalog' || source === 'live') &&
     new Set(value.sources).size === value.sources.length &&
     (value.pricing_status === 'pending' || value.pricing_status === 'configured') &&
-    typeof value.alias === 'string' &&
-    typeof value.alias_enabled === 'boolean' &&
+    Array.isArray(value.aliases) &&
+    value.aliases.every((alias) => typeof alias === 'string' && alias.length > 0) &&
     (value.editable_id === undefined || typeof value.editable_id === 'boolean') &&
     typeof value.key === 'number' &&
     Number.isSafeInteger(value.key) &&
@@ -178,8 +177,24 @@ function isImportDraft(value: unknown): value is ImportRecoveryDraft {
   return isRecord(value) && (isNewImportDraft(value) || isExistingImportDraft(value))
 }
 
-function parseRecoveryRecord(raw: string): ImportRecoveryRecord | null {
-  try {
+/**
+ * 8 → 9：把单别名字段折叠成别名列表。旧记录在开关关闭时别名为空，
+ * 与「别名非空即已启用」的历史语义一致。
+ */
+function migrateModelAliases(models: unknown): unknown {
+  if (!Array.isArray(models)) return models
+  return models.map((model) => {
+    if (!isRecord(model)) return model
+    const { alias, alias_enabled: aliasEnabled, ...rest } = model
+    const value = typeof alias === 'string' ? alias.trim() : ''
+    return {
+      ...rest,
+      aliases: aliasEnabled === true && value !== '' ? [value] : [],
+    }
+  })
+}
+
+function parseRecoveryRecord(raw: string): ImportRecoveryRecord | null {  try {
     let value: unknown = JSON.parse(raw)
     if (isRecord(value) && value.version === 6 && isRecord(value.draft)) {
       value = {
@@ -198,10 +213,17 @@ function parseRecoveryRecord(raw: string): ImportRecoveryRecord | null {
         draft: value.draft.mode === 'new' ? { ...value.draft, price_multiplier: '1' } : value.draft,
       }
     }
+    if (isRecord(value) && value.version === 8 && isRecord(value.draft)) {
+      value = {
+        ...value,
+        version: 9,
+        draft: { ...value.draft, models: migrateModelAliases(value.draft.models) },
+      }
+    }
     if (
       !isRecord(value) ||
       !hasOnlyFields(value, ['version', 'expires_at', 'draft']) ||
-      value.version !== 8 ||
+      value.version !== 9 ||
       typeof value.expires_at !== 'number' ||
       !Number.isFinite(value.expires_at) ||
       !isImportDraft(value.draft)
@@ -279,7 +301,7 @@ export function createImportRecoveryService(
     if (!deps.storage) return 'storage-unavailable'
 
     const record: ImportRecoveryRecord = {
-      version: 8,
+      version: 9,
       expires_at: deps.now() + importRecoveryTtlMs,
       draft,
     }

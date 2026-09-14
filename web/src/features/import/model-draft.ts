@@ -49,8 +49,7 @@ export function createDiscoveredModelDraft(
         name: candidate.name,
         sources: [...candidate.sources],
         pricing_status: candidate.pricing_status,
-        alias: '',
-        alias_enabled: false,
+        aliases: [],
         key: nextKey(),
       },
     ]

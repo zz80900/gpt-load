@@ -26,10 +26,9 @@ export interface ModelAliasEditorLabels {
   search: string
   searchLabel: string
   clearSearch: string
-  aliasEnabledFor: (id: string) => string
   aliasFor: (id: string) => string
   aliasPlaceholder: string
-  aliasRequired: string
+  removeAliasFor: (alias: string) => string
   removeFor: (id: string) => string
   manualId: string
   manualIdRequired: string
@@ -120,41 +119,53 @@ export function readModelNameConflicts(value: unknown): ModelNameConflict[] {
   })
 }
 
+/**
+ * 规范化别名列表：逐项 trim、丢弃空项与等于模型 ID 的项、按首次出现去重（大小写敏感的
+ * 精确比较）。必须与服务端 normalizeModelAliases 同规则，否则前端判为合法的配置会被
+ * 服务端拒绝，用户会看到反复重试仍保存失败。
+ */
+export function normalizeAliases(values: readonly string[], id: string): string[] {
+  const trimmedID = id.trim()
+  const aliases: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const alias = value.trim()
+    if (alias === '' || alias === trimmedID || seen.has(alias)) continue
+    seen.add(alias)
+    aliases.push(alias)
+  }
+  return aliases
+}
+
 export function normalizeModel(model: GroupModelUpdateDto): GroupModelUpdateDto | undefined {
   const id = model.id.trim()
   if (!id) return undefined
-  const alias = model.alias_enabled ? model.alias.trim() : ''
-  return { id, alias, alias_enabled: model.alias_enabled }
+  return { id, aliases: normalizeAliases(model.aliases ?? [], id) }
 }
 
-export function clientModel(model: GroupModelUpdateDto): string {
+/** 客户端可用的全部名称：上游 ID 在首位，其后是规范化后的别名。 */
+export function clientModels(model: GroupModelUpdateDto): string[] {
   const normalized = normalizeModel(model)
-  return normalized === undefined ? '' : normalized.alias_enabled ? normalized.alias : normalized.id
+  return normalized === undefined ? [] : [normalized.id, ...normalized.aliases]
 }
 
 /** Client names are intentionally exact and case sensitive, matching the API contract. */
 export function findModelNameConflicts(
   models: readonly GroupModelUpdateDto[],
 ): ModelNameConflict[] {
-  const byClientModel = new Map<string, number[]>()
+  const indexesByName = new Map<string, number[]>()
   for (const [index, model] of models.entries()) {
-    const name = clientModel(model)
-    if (!name) continue
-    byClientModel.set(name, [...(byClientModel.get(name) ?? []), index])
+    for (const name of clientModels(model)) {
+      indexesByName.set(name, [...(indexesByName.get(name) ?? []), index])
+    }
   }
-  return [...byClientModel.entries()]
+  return [...indexesByName.entries()]
     .filter(([, indexes]) => indexes.length > 1)
     .map(([client_model, indexes]) => ({ client_model, indexes }))
 }
 
 export function indexesWithConflicts(conflicts: readonly ModelNameConflict[]): Set<number> {
   return new Set(conflicts.flatMap((conflict) => conflict.indexes))
-}
-
-export function indexesWithEmptyAliases(models: readonly GroupModelUpdateDto[]): Set<number> {
-  return new Set(
-    models.flatMap((model, index) => (model.alias_enabled && !model.alias.trim() ? [index] : [])),
-  )
 }
 
 export function indexesWithEmptyIDs(models: readonly GroupModelUpdateDto[]): Set<number> {
@@ -167,17 +178,14 @@ export function modelDraftValidity(
 ): {
   conflictIndexes: Set<number>
   emptyIDIndexes: Set<number>
-  emptyAliasIndexes: Set<number>
   invalidIndexes: Set<number>
 } {
   const conflictIndexes = indexesWithConflicts(conflicts)
   const emptyIDIndexes = indexesWithEmptyIDs(models)
-  const emptyAliasIndexes = indexesWithEmptyAliases(models)
   return {
     conflictIndexes,
     emptyIDIndexes,
-    emptyAliasIndexes,
-    invalidIndexes: new Set([...conflictIndexes, ...emptyIDIndexes, ...emptyAliasIndexes]),
+    invalidIndexes: new Set([...conflictIndexes, ...emptyIDIndexes]),
   }
 }
 

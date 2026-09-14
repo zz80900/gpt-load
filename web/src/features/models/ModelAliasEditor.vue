@@ -8,9 +8,11 @@ import AppSearchInput from '@/components/ui/AppSearchInput.vue'
 import AppTextInput from '@/components/ui/AppTextInput.vue'
 import CompactFieldError from '@/components/ui/CompactFieldError.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import TagInput from '@/components/ui/TagInput.vue'
 
 import {
   modelDraftValidity,
+  normalizeAliases,
   type ModelAliasEditorLabels,
   type ModelDraftKey,
   type ModelDraftValue,
@@ -68,28 +70,29 @@ const validity = computed(() => modelDraftValidity(props.modelValue, props.confl
 const visibleRows = computed(() => {
   const query = searchValue.value.trim().toLocaleLowerCase()
   return props.modelValue.flatMap((item, index) =>
-    !query || `${item.id} ${item.name} ${item.alias}`.toLocaleLowerCase().includes(query)
+    !query ||
+    `${item.id} ${item.name} ${item.aliases.join(' ')}`.toLocaleLowerCase().includes(query)
       ? [{ item, index }]
       : [],
   )
 })
 
-function updateRow(
-  index: number,
-  patch: Partial<Pick<ModelDraftValue, 'id' | 'alias' | 'alias_enabled'>>,
-): void {
+function updateRow(index: number, patch: Partial<Pick<ModelDraftValue, 'id' | 'aliases'>>): void {
   emit(
     'update:modelValue',
     props.modelValue.map((item, current) =>
       current === index
-        ? ({
-            ...item,
-            ...patch,
-            alias: patch.alias_enabled === false ? '' : (patch.alias ?? item.alias),
-          } as T)
+        ? ({ ...item, ...patch } as T)
         : ({ ...item, sources: [...item.sources] } as T),
     ),
   )
+}
+
+/** 别名在写入草稿前先规范化：trim、去空、去 ID、去重，与服务端同规则。 */
+function setAliases(index: number, aliases: string[]): void {
+  const item = props.modelValue[index]
+  if (item === undefined) return
+  updateRow(index, { aliases: normalizeAliases(aliases, item.id) })
 }
 
 function removeRow(index: number): void {
@@ -118,18 +121,20 @@ function conflictMessage(index: number): string {
   return conflict ? props.labels.nameConflict(conflict.client_model) : ''
 }
 
+function conflictName(index: number): string {
+  return props.conflicts.find((item) => item.indexes.includes(index))?.client_model ?? ''
+}
+
 function modelIDError(item: ModelDraftValue, index: number): string {
   if (validity.value.emptyIDIndexes.has(index)) return props.labels.manualIdRequired
-  if (!item.alias_enabled && validity.value.conflictIndexes.has(index)) {
-    return conflictMessage(index)
-  }
-  return ''
+  // 冲突名等于本行 ID 时，错误归属于 ID 列；否则由别名列呈现。
+  return conflictName(index) === item.id.trim() ? conflictMessage(index) : ''
 }
 
 function modelAliasError(item: ModelDraftValue, index: number): string {
-  if (!item.alias_enabled) return ''
-  if (validity.value.emptyAliasIndexes.has(index)) return props.labels.aliasRequired
-  return validity.value.conflictIndexes.has(index) ? conflictMessage(index) : ''
+  const name = conflictName(index)
+  if (name === '' || name === item.id.trim()) return ''
+  return conflictMessage(index)
 }
 
 function visibleModelIDError(item: ModelDraftValue, index: number): string {
@@ -182,38 +187,23 @@ function touchAlias(key: ModelDraftKey): void {
   touchedAliases.value = new Set(touchedAliases.value).add(key)
 }
 
-async function setAliasEnabled(index: number, enabled: boolean): Promise<void> {
-  const item = props.modelValue[index]
-  if (enabled && item && props.validationMode === 'blur') {
-    const nextTouched = new Set(touchedAliases.value)
-    nextTouched.delete(item.key)
-    touchedAliases.value = nextTouched
-  }
-  updateRow(index, { alias_enabled: enabled })
-  if (!enabled) return
-
-  await nextTick()
-  root.value?.querySelector<HTMLInputElement>(`[data-alias-input-index="${index}"]`)?.focus()
-}
-
 async function focusFirstInvalid(): Promise<void> {
   const index = Math.min(...validity.value.invalidIndexes)
   if (!Number.isFinite(index)) return
   searchValue.value = ''
   const item = props.modelValue[index]
+  const conflict = conflictName(index)
   const targetsModelID =
     validity.value.emptyIDIndexes.has(index) ||
-    (validity.value.conflictIndexes.has(index) && item?.editable_id && !item.alias_enabled)
+    (conflict !== '' && item !== undefined && conflict === item.id.trim())
   if (item) {
     if (targetsModelID) touchModelID(item.key)
-    else if (item.alias_enabled) touchAlias(item.key)
+    else touchAlias(item.key)
   }
   await nextTick()
   const selector = targetsModelID
     ? `[data-model-id-index="${index}"]`
-    : item?.alias_enabled
-      ? `[data-alias-input-index="${index}"]`
-      : `[data-alias-toggle-index="${index}"]`
+    : `[data-alias-input-index="${index}"]`
   root.value?.querySelector<HTMLInputElement>(selector)?.focus()
 }
 
@@ -292,45 +282,27 @@ defineExpose({ addManual, focusFirstInvalid })
 
         <div class="ledger-record-list__cell model-alias-editor__alias-cell" role="cell">
           <span class="model-alias-editor__mobile-label">{{ labels.alias }}</span>
-          <div class="model-alias-editor__alias-control">
-            <label
-              class="model-alias-editor__alias-toggle"
-              :class="{ 'model-alias-editor__alias-toggle--disabled': disabled }"
-            >
-              <span class="sr-only">{{ labels.aliasEnabledFor(item.id) }}</span>
-              <input
-                :data-alias-toggle-index="index"
-                type="checkbox"
-                :checked="item.alias_enabled"
+          <CompactFieldError
+            :id="`${instanceId}-model-alias-${index}`"
+            class="model-alias-editor__alias-field"
+            :error="visibleModelAliasError(item, index)"
+          >
+            <template #default="{ invalid, describedBy }">
+              <TagInput
+                :id="`${instanceId}-model-alias-${index}`"
+                :model-value="item.aliases"
+                :label="labels.aliasFor(item.id)"
+                :placeholder="labels.aliasPlaceholder"
+                :remove-label="labels.removeAliasFor"
                 :disabled="disabled"
-                @change="setAliasEnabled(index, ($event.target as HTMLInputElement).checked)"
+                :invalid="invalid"
+                :described-by="describedBy"
+                :data-alias-input-index="index"
+                @update:model-value="setAliases(index, $event)"
+                @blur="touchAlias(item.key)"
               />
-            </label>
-            <CompactFieldError
-              v-if="item.alias_enabled"
-              :id="`${instanceId}-model-alias-${index}`"
-              class="model-alias-editor__alias-field"
-              :error="visibleModelAliasError(item, index)"
-            >
-              <template #default="{ invalid, describedBy }">
-                <AppTextInput
-                  :id="`${instanceId}-model-alias-${index}`"
-                  :model-value="item.alias"
-                  appearance="surface"
-                  size="compact"
-                  :label="labels.aliasFor(item.id)"
-                  :disabled="disabled"
-                  :placeholder="labels.aliasPlaceholder"
-                  :invalid="invalid"
-                  :described-by="describedBy"
-                  :data-alias-input-index="index"
-                  :spellcheck="false"
-                  @update:model-value="updateRow(index, { alias: $event })"
-                  @blur="touchAlias(item.key)"
-                />
-              </template>
-            </CompactFieldError>
-          </div>
+            </template>
+          </CompactFieldError>
         </div>
 
         <div class="ledger-record-list__cell model-alias-editor__third-column" role="cell">
@@ -406,7 +378,8 @@ defineExpose({ addManual, focusFirstInvalid })
 }
 
 .model-alias-editor__grid {
-  --ledger-record-list-record-min-height: 58px;
+  /* 一个模型可配多个别名，标签会换行，因此行高比单输入框时代更高。 */
+  --ledger-record-list-record-min-height: 64px;
   --ledger-record-list-record-padding: 9px 0;
   --ledger-record-list-grid: minmax(180px, 24fr) minmax(280px, 52fr) minmax(120px, 18fr) 40px;
   --ledger-record-list-column-gap: 16px;
@@ -458,43 +431,9 @@ defineExpose({ addManual, focusFirstInvalid })
   gap: var(--space-1);
 }
 
-.model-alias-editor__alias-control {
-  display: flex;
-  min-height: var(--control-sm);
-  align-items: center;
-  gap: 9px;
-}
-
-.model-alias-editor__alias-toggle {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  place-items: center;
-  cursor: pointer;
-}
-
-.model-alias-editor__alias-toggle input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--color-action);
-  cursor: pointer;
-}
-
-.model-alias-editor__alias-toggle--disabled,
-.model-alias-editor__alias-toggle input:disabled {
-  cursor: not-allowed;
-}
-
-.model-alias-editor__alias-toggle input:disabled {
-  opacity: 0.55;
-}
-
 .model-alias-editor__alias-field {
-  width: min(100%, 300px);
+  width: 100%;
   min-width: 0;
-  flex: 1;
 }
 
 .model-alias-editor__actions {
@@ -516,7 +455,7 @@ defineExpose({ addManual, focusFirstInvalid })
 
 .model-alias-editor__empty {
   grid-template-columns: minmax(0, 1fr);
-  min-height: 58px;
+  min-height: 64px;
   color: var(--color-text-faint);
   font-size: var(--text-sm);
   text-align: center;
@@ -576,17 +515,6 @@ defineExpose({ addManual, focusFirstInvalid })
 
   .model-alias-editor__mobile-label {
     display: inline;
-  }
-
-  .model-alias-editor__alias-toggle {
-    width: var(--touch-target);
-    height: var(--touch-target);
-    flex-basis: var(--touch-target);
-  }
-
-  .model-alias-editor__id-field,
-  .model-alias-editor__alias-field {
-    max-width: none;
   }
 
   .model-alias-editor__id-field {

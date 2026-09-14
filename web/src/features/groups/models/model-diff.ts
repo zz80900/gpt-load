@@ -27,8 +27,7 @@ export function createModelDraft(items: readonly GroupModelItemDto[]): ModelDraf
     id: item.id,
     name: item.id,
     sources: [],
-    alias: item.alias,
-    alias_enabled: item.alias_enabled,
+    aliases: [...item.aliases],
     pricing_status: item.pricing_status,
     key: index,
   }))
@@ -68,6 +67,6 @@ export function syncedModels(
   const additions =
     mode === 'cleanup'
       ? []
-      : diff.additions.map(({ id }) => ({ id, alias: '', alias_enabled: false }))
+      : diff.additions.map(({ id }) => ({ id, aliases: [] }))
   return normalizeSharedModels([...retained, ...additions])
 }
