@@ -1,0 +1,156 @@
+name: Private Image
+
+# 独立于 release.yml 的私有镜像发布流程：只做「构建 + 推送 GHCR」。
+# 不触碰上游发布链路（Docker Hub、Windows 安装包、原生产物冒烟、多库契约测试），
+# 因此可以在 fork 仓库里独立运行，不需要上游的任何 secrets。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '镜像版本标签；留空时，tag 触发取 tag 名，分支触发取 sha-<短SHA>'
+        required: false
+        type: string
+      push_latest:
+        description: '同时推送 latest 标签'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# 竖线分隔在任何错误（含网络错误）时回退到下一个源；默认的逗号只在
+# 404/410 时回退，proxy.golang.org 瞬时故障会直接让 job 失败。
+env:
+  GOPROXY: https://proxy.golang.org|direct
+
+concurrency:
+  group: private-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [[ -z "${version}" ]]; then
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              version="${GITHUB_REF_NAME}"
+            else
+              version="sha-${GITHUB_SHA::7}"
+            fi
+          fi
+          echo "value=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved image version: ${version}"
+
+      # 这里不复用 .github/actions/web-ci：它的 lint 与 format 检查在发布场景
+      # 是纯开销，跳过可省下一次完整 ESLint + Prettier 扫描。
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+        with:
+          version: 11.17.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # 必须先于 go build：Go 二进制通过 embed 打包 internal/webui/dist。
+      - name: Build embedded web assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web run build
+
+      # setup-go 的 cache 同时复用 GOMODCACHE 与 GOCACHE，其中 GOCACHE 让
+      # go build 走增量编译 —— 这是整个流程里最有效的单点提速：命中缓存时
+      # 只重编改动的包，未命中则要全量编译数分钟。
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 交叉编译由 runner 直接完成，镜像内不再编译，因此 arm64 不需要 QEMU
+      # 模拟编译器（QEMU 仍用于镜像构建阶段的 apk，见下方 Set up QEMU）。
+      - name: Build linux binaries
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for arch in amd64 arm64; do
+            echo "Building linux/${arch} (version=${VERSION})"
+            CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build \
+              -trimpath \
+              -ldflags "-s -w -X gpt-load/internal/platform/version.Version=${VERSION}" \
+              -o "release/gpt-load-linux-${arch}" \
+              .
+          done
+          ls -lh release
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest,enable=${{ inputs.push_latest }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+
+      # target=prebuilt：直接打包上面交叉编译好的二进制，镜像内零编译。
+      # cache scope 与 release.yml 隔离，避免两个 workflow 互相污染缓存。
+      - name: Build and push image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: prebuilt
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=private-image
+          cache-to: type=gha,mode=max,scope=private-image
