@@ -14,8 +14,8 @@ const router = useRouter()
 const { n, t } = useI18n()
 const activeTab = computed(() => normalizeGroupTab(route.query.tab))
 const items = computed<AppTabItem[]>(() => [
-  { value: 'credentials', label: t('group.tabs.credentials'), count: n(props.credentialCount) },
   { value: 'models', label: t('group.tabs.models'), count: n(props.modelCount) },
+  { value: 'credentials', label: t('group.tabs.credentials'), count: n(props.credentialCount) },
   { value: 'settings', label: t('group.tabs.settings') },
 ])
 

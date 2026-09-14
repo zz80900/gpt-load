@@ -54,8 +54,10 @@ export function parsePositiveId(raw: unknown): number | undefined {
   return Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
+// 未指定 tab 时默认进入「模型与别名」：分组详情的主要用途是查看与配置模型，
+// 凭据与设置多数情况下是低频的后续操作。
 export function normalizeGroupTab(raw: unknown): GroupTab {
-  return raw === 'models' || raw === 'settings' || raw === 'credentials' ? raw : 'credentials'
+  return raw === 'models' || raw === 'settings' || raw === 'credentials' ? raw : 'models'
 }
 
 export function normalizeCredentialSearch(value: string | undefined): string | undefined {
