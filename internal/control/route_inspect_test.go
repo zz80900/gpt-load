@@ -261,7 +261,7 @@ func TestRouteInspectDerivesStandardRequestMetadataFromProtocol(t *testing.T) {
 		ChannelRegistry: fixture.channelRegistry,
 		Groups: []state.GroupConfig{{
 			ID: 1, Name: "openai", ChannelID: channel.OpenAI, ConnectionType: "api_key",
-			Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "provider-model", Alias: "public"}},
+			Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "provider-model", Aliases: []string{"public"}}},
 			Enabled: true,
 		}},
 		AccessKeys: []state.AccessKeyConfig{{
@@ -343,11 +343,11 @@ func TestRouteInspectStandardRequestIncludesNativeAndConvertedTargets(t *testing
 		ChannelRegistry: fixture.channelRegistry,
 		Groups: []state.GroupConfig{
 			{ConnectionType: "api_key", ID: 1, Name: "native", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models: []state.ModelConfig{{ID: "native-model", Alias: "public-model"}}, Enabled: true,
+				Models: []state.ModelConfig{{ID: "native-model", Aliases: []string{"public-model"}}}, Enabled: true,
 			},
 			{ConnectionType: "api_key", ID: 2, Name: "converted", ChannelID: channel.OpenAICompatible,
 				Params: json.RawMessage(`{"base_url":"https://compatible.example/v1"}`),
-				Models: []state.ModelConfig{{ID: "converted-model", Alias: "public-model"}}, Enabled: true,
+				Models: []state.ModelConfig{{ID: "converted-model", Aliases: []string{"public-model"}}}, Enabled: true,
 			},
 		},
 		AccessKeys: []state.AccessKeyConfig{{
@@ -389,12 +389,12 @@ func TestRouteInspectEndpointReturnsCurrentSafeExplanation(t *testing.T) {
 		Groups: []state.GroupConfig{
 			{ConnectionType: "api_key", ID: 2, Name: "backup", ChannelID: channel.OpenAI,
 				Params:       json.RawMessage(`{}`),
-				Models:       []state.ModelConfig{{ID: "provider-backup", Alias: "public-model"}},
+				Models:       []state.ModelConfig{{ID: "provider-backup", Aliases: []string{"public-model"}}},
 				WeightManual: &groupWeight, Enabled: true,
 			},
 			{ConnectionType: "api_key", ID: 1, Name: "primary", ChannelID: channel.OpenAI,
 				Params:  json.RawMessage(`{}`),
-				Models:  []state.ModelConfig{{ID: "provider-model", Alias: "public-model"}},
+				Models:  []state.ModelConfig{{ID: "provider-model", Aliases: []string{"public-model"}}},
 				Enabled: true,
 			},
 		},
@@ -542,11 +542,11 @@ func TestRouteInspectEndpointReturnsFilterExplanations(t *testing.T) {
 				ChannelRegistry: fixture.channelRegistry,
 				Groups: []state.GroupConfig{
 					{ConnectionType: "api_key", ID: 2, Name: "second", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-						Models:       []state.ModelConfig{{ID: "provider-two", Alias: "public-model"}},
+						Models:       []state.ModelConfig{{ID: "provider-two", Aliases: []string{"public-model"}}},
 						WeightManual: &manual, Enabled: true,
 					},
 					{ConnectionType: "api_key", ID: 1, Name: "first", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-						Models:  []state.ModelConfig{{ID: "provider-one", Alias: "public-model"}},
+						Models:  []state.ModelConfig{{ID: "provider-one", Aliases: []string{"public-model"}}},
 						Enabled: true,
 					},
 				},
@@ -656,7 +656,7 @@ func TestRouteInspectEndpointReturnsNoAvailableKeyExplanation(t *testing.T) {
 	if _, err := fixture.manager.Publish(state.CompileInput{
 		ChannelRegistry: fixture.channelRegistry,
 		Groups: []state.GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "primary", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-			Models:       []state.ModelConfig{{ID: "provider-model", Alias: "public-model"}},
+			Models:       []state.ModelConfig{{ID: "provider-model", Aliases: []string{"public-model"}}},
 			WeightManual: &groupWeight, Enabled: true,
 		}},
 		AccessKeys: []state.AccessKeyConfig{{

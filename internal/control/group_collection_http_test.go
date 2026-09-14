@@ -347,13 +347,15 @@ func TestGroupCollectionHTTPReturnsExactCollectionAndOptionsContracts(t *testing
 		!optionData[0].Enabled ||
 		optionData[0].ChannelID != channel.OpenAICompatible ||
 		string(optionData[0].Params) != `{"base_url":"https://alpha.example/v1"}` ||
-		len(optionData[0].Models) != 2 ||
-		optionData[0].Models[0] != "public-alpha" ||
-		optionData[0].Models[1] != "second-alpha" ||
+		len(optionData[0].Models) != 3 ||
+		optionData[0].Models[0] != "private-alpha" ||
+		optionData[0].Models[1] != "public-alpha" ||
+		optionData[0].Models[2] != "second-alpha" ||
 		optionData[1].ID != 20 || optionData[1].Name != "zulu" ||
 		optionData[1].Enabled ||
 		optionData[1].ChannelID != channel.Anthropic || string(optionData[1].Params) != `{}` ||
-		len(optionData[1].Models) != 1 || optionData[1].Models[0] != "public-zulu" {
+		len(optionData[1].Models) != 2 || optionData[1].Models[0] != "private-zulu" ||
+		optionData[1].Models[1] != "public-zulu" {
 		t.Fatalf("options data = %#v, want exact ID-ordered directory", optionData)
 	}
 

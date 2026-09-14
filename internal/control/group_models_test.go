@@ -38,8 +38,8 @@ func TestGetGroupModelsReturnsClientNamesAndPricingStatus(t *testing.T) {
 		ChannelID: channel.OpenAI,
 		Params:    json.RawMessage(`{}`),
 		Models: optionalGroupModels{Set: true, Values: []GroupModel{
-			{ID: "gpt-4o", Alias: "default", AliasEnabled: true},
-			{ID: "missing-price", Alias: ""},
+			{ID: "gpt-4o", Aliases: []string{"default"}},
+			{ID: "missing-price"},
 		}},
 		Credentials: "sk-model-read", ConnectionType: "api_key",
 	})
@@ -53,8 +53,8 @@ func TestGetGroupModelsReturnsClientNamesAndPricingStatus(t *testing.T) {
 	}
 	want := GroupModelsResponse{
 		Items: []GroupModelResponse{
-			{ID: "gpt-4o", Alias: "default", AliasEnabled: true, ClientModel: "default", PricingStatus: PricingStatusConfigured},
-			{ID: "missing-price", Alias: "", AliasEnabled: false, ClientModel: "missing-price", PricingStatus: PricingStatusPending},
+			{ID: "gpt-4o", Aliases: []string{"default"}, ClientModels: []string{"gpt-4o", "default"}, PricingStatus: PricingStatusConfigured},
+			{ID: "missing-price", Aliases: []string{}, ClientModels: []string{"missing-price"}, PricingStatus: PricingStatusPending},
 		},
 		Total:   2,
 		Pending: 1,
@@ -82,7 +82,7 @@ func TestMapGroupModelsResponseTreatsContextTierOnlyPriceAsConfigured(t *testing
 	}
 	want := GroupModelsResponse{
 		Items: []GroupModelResponse{{
-			ID: "tiered-model", ClientModel: "tiered-model", PricingStatus: PricingStatusConfigured,
+			ID: "tiered-model", Aliases: []string{}, ClientModels: []string{"tiered-model"}, PricingStatus: PricingStatusConfigured,
 		}},
 		Total: 1,
 	}
@@ -101,19 +101,19 @@ func TestNormalizeGroupModelsAppliesAliasSwitchAndReportsStableConflicts(t *test
 		wantError     error
 	}{
 		{
-			name: "disabled alias uses upstream ID and conflicts with enabled alias",
+			name: "upstream ID conflicts with another model's alias",
 			values: []GroupModel{
-				{ID: "a", Alias: ""},
-				{ID: "b", Alias: "a", AliasEnabled: true},
+				{ID: "a"},
+				{ID: "b", Aliases: []string{"a"}},
 			},
 			wantConflicts: []ModelNameConflict{{ClientModel: "a", Indexes: []int{0, 1}}},
 			wantError:     app_errors.ErrModelNameConflict,
 		},
 		{
-			name: "enabled aliases conflict",
+			name: "same alias on two models conflict",
 			values: []GroupModel{
-				{ID: "a", Alias: "x", AliasEnabled: true},
-				{ID: "b", Alias: "x", AliasEnabled: true},
+				{ID: "a", Aliases: []string{"x"}},
+				{ID: "b", Aliases: []string{"x"}},
 			},
 			wantConflicts: []ModelNameConflict{{ClientModel: "x", Indexes: []int{0, 1}}},
 			wantError:     app_errors.ErrModelNameConflict,
@@ -121,41 +121,59 @@ func TestNormalizeGroupModelsAppliesAliasSwitchAndReportsStableConflicts(t *test
 		{
 			name: "model names remain case sensitive",
 			values: []GroupModel{
-				{ID: "a", Alias: "X", AliasEnabled: true},
-				{ID: "b", Alias: "x", AliasEnabled: true},
+				{ID: "a", Aliases: []string{"X"}},
+				{ID: "b", Aliases: []string{"x"}},
 			},
 			want: []GroupModel{
-				{ID: "a", Alias: "X"},
-				{ID: "b", Alias: "x"},
+				{ID: "a", Aliases: []string{"X"}},
+				{ID: "b", Aliases: []string{"x"}},
 			},
 		},
 		{
 			name: "trimmed IDs and aliases conflict",
 			values: []GroupModel{
-				{ID: " a ", Alias: ""},
-				{ID: "b", Alias: " a ", AliasEnabled: true},
+				{ID: " a "},
+				{ID: "b", Aliases: []string{" a "}},
 			},
 			wantConflicts: []ModelNameConflict{{ClientModel: "a", Indexes: []int{0, 1}}},
 			wantError:     app_errors.ErrModelNameConflict,
 		},
 		{
-			name:      "enabled alias cannot be blank after trimming",
-			values:    []GroupModel{{ID: "a", Alias: " ", AliasEnabled: true}},
-			wantError: app_errors.ErrValidation,
+			name:   "blank alias is dropped rather than rejected",
+			values: []GroupModel{{ID: "a", Aliases: []string{" "}}},
+			want:   []GroupModel{{ID: "a", Aliases: []string{}}},
 		},
 		{
 			name: "multiple conflicts use first occurrence order",
 			values: []GroupModel{
 				{ID: "a"},
-				{ID: "b", Alias: "a", AliasEnabled: true},
+				{ID: "b", Aliases: []string{"a"}},
 				{ID: "c"},
-				{ID: "d", Alias: "c", AliasEnabled: true},
+				{ID: "d", Aliases: []string{"c"}},
 			},
 			wantConflicts: []ModelNameConflict{
 				{ClientModel: "a", Indexes: []int{0, 1}},
 				{ClientModel: "c", Indexes: []int{2, 3}},
 			},
 			wantError: app_errors.ErrModelNameConflict,
+		},
+		{
+			// 单别名时代的存量写法：用户用两条同 ID 记录表达「一个模型两个名」。
+			// 新规则下这必须继续可编译，不能报冲突。
+			name: "legacy duplicate rows for one upstream merge without conflict",
+			values: []GroupModel{
+				{ID: "shared", Aliases: []string{"a"}},
+				{ID: "shared", Aliases: []string{"b"}},
+			},
+			want: []GroupModel{
+				{ID: "shared", Aliases: []string{"a"}},
+				{ID: "shared", Aliases: []string{"b"}},
+			},
+		},
+		{
+			name:   "alias equal to model ID is dropped and duplicates collapse",
+			values: []GroupModel{{ID: "a", Aliases: []string{"a", "x", "x", ""}}},
+			want:   []GroupModel{{ID: "a", Aliases: []string{"x"}}},
 		},
 	}
 
@@ -190,8 +208,8 @@ func TestNormalizeGroupModelsAppliesAliasSwitchAndReportsStableConflicts(t *test
 func TestNormalizeGroupModelsRejectsDuplicateExternalNames(t *testing.T) {
 	t.Parallel()
 	for _, values := range [][]GroupModel{
-		{{ID: "provider-a", Alias: "public", AliasEnabled: true}, {ID: "provider-b", Alias: "public", AliasEnabled: true}},
-		{{ID: "public"}, {ID: "provider-b", Alias: "public", AliasEnabled: true}},
+		{{ID: "provider-a", Aliases: []string{"public"}}, {ID: "provider-b", Aliases: []string{"public"}}},
+		{{ID: "public"}, {ID: "provider-b", Aliases: []string{"public"}}},
 	} {
 		var apiErr *app_errors.APIError
 		if _, err := normalizeGroupModels(values); !errors.As(err, &apiErr) ||
@@ -230,7 +248,7 @@ func TestUpdateGroupModelsReplacesAuthoritativeListAndPublishesOnce(t *testing.T
 		Params:    json.RawMessage(`{"base_url":"https://model-save.example.com/v1"}`),
 		Models: optionalGroupModels{
 			Set:    true,
-			Values: []GroupModel{{ID: "provider-old", Alias: "old-public", AliasEnabled: true}},
+			Values: []GroupModel{{ID: "provider-old", Aliases: []string{"old-public"}, AliasEnabled: true}},
 		},
 		Credentials: "sk-model-save-a\nsk-model-save-b", ConnectionType: "api_key",
 	})
@@ -267,8 +285,8 @@ func TestUpdateGroupModelsReplacesAuthoritativeListAndPublishesOnce(t *testing.T
 		Models: optionalGroupModels{
 			Set: true,
 			Values: []GroupModel{
-				{ID: "provider-b", Alias: "public-b", AliasEnabled: true},
-				{ID: "provider-a", Alias: "public-a", AliasEnabled: true},
+				{ID: "provider-b", Aliases: []string{"public-b"}, AliasEnabled: true},
+				{ID: "provider-a", Aliases: []string{"public-a"}, AliasEnabled: true},
 			},
 		},
 	})
@@ -276,13 +294,13 @@ func TestUpdateGroupModelsReplacesAuthoritativeListAndPublishesOnce(t *testing.T
 		t.Fatalf("UpdateGroupModels() error = %v", err)
 	}
 	wantModels := []GroupModel{
-		{ID: "provider-b", Alias: "public-b"},
-		{ID: "provider-a", Alias: "public-a"},
+		{ID: "provider-b", Aliases: []string{"public-b"}},
+		{ID: "provider-a", Aliases: []string{"public-a"}},
 	}
 	want := GroupModelsResponse{
 		Items: []GroupModelResponse{
-			{ID: "provider-b", Alias: "public-b", AliasEnabled: true, ClientModel: "public-b", PricingStatus: PricingStatusPending},
-			{ID: "provider-a", Alias: "public-a", AliasEnabled: true, ClientModel: "public-a", PricingStatus: PricingStatusPending},
+			{ID: "provider-b", Aliases: []string{"public-b"}, ClientModels: []string{"provider-b", "public-b"}, PricingStatus: PricingStatusPending},
+			{ID: "provider-a", Aliases: []string{"public-a"}, ClientModels: []string{"provider-a", "public-a"}, PricingStatus: PricingStatusPending},
 		},
 		Total:   2,
 		Pending: 2,
@@ -341,18 +359,23 @@ func TestUpdateGroupModelsReplacesAuthoritativeListAndPublishesOnce(t *testing.T
 		t.Fatalf("effective/snapshot = %#v/%#v", settings.Effective, view)
 	}
 	targets := snapshot.ExecutionCandidates[protocol.OpenAICompletions][execution.OperationChatCompletion]
-	if len(targets) != 2 ||
+	// 上游 ID 与别名并列注册：每个模型贡献两个可路由名称。
+	if len(targets) != 4 ||
 		targets["public-a"][0].UpstreamModelID != "provider-a" ||
-		targets["public-b"][0].UpstreamModelID != "provider-b" {
+		targets["provider-a"][0].UpstreamModelID != "provider-a" ||
+		targets["public-b"][0].UpstreamModelID != "provider-b" ||
+		targets["provider-b"][0].UpstreamModelID != "provider-b" {
 		t.Fatalf("candidate mapping = %#v", targets)
 	}
 	if _, exists := targets["old-public"]; exists {
 		t.Fatalf("authoritative replacement retained old model: %#v", targets)
 	}
 	routes := snapshot.ExecutionRouteCatalog[protocol.OpenAICompletions][execution.OperationChatCompletion]
-	if len(routes) != 2 ||
+	if len(routes) != 4 ||
 		routes["public-a"][0].UpstreamModelID != "provider-a" ||
-		routes["public-b"][0].UpstreamModelID != "provider-b" {
+		routes["provider-a"][0].UpstreamModelID != "provider-a" ||
+		routes["public-b"][0].UpstreamModelID != "provider-b" ||
+		routes["provider-b"][0].UpstreamModelID != "provider-b" {
 		t.Fatalf("route catalog = %#v", routes)
 	}
 }
@@ -366,7 +389,7 @@ func TestUpdateGroupModelsAllowsEmptyList(t *testing.T) {
 		Params:    json.RawMessage(`{"base_url":"https://empty-models.example.com/v1"}`),
 		Models: optionalGroupModels{
 			Set:    true,
-			Values: []GroupModel{{ID: "provider-old", Alias: "old-public", AliasEnabled: true}},
+			Values: []GroupModel{{ID: "provider-old", Aliases: []string{"old-public"}, AliasEnabled: true}},
 		},
 		Credentials: "sk-empty-models", ConnectionType: "api_key",
 	})
@@ -424,7 +447,7 @@ func TestUpdateGroupModelsNeverCallsDiscoveryOrChangesAccessKeyFilters(t *testin
 	_, err = fixture.service.UpdateGroupModels(t.Context(), groupID, GroupModelsUpdateRequest{
 		Models: optionalGroupModels{
 			Set:    true,
-			Values: []GroupModel{{ID: "provider-new", Alias: "new-public", AliasEnabled: true}},
+			Values: []GroupModel{{ID: "provider-new", Aliases: []string{"new-public"}, AliasEnabled: true}},
 		},
 	})
 	if err != nil {
@@ -459,8 +482,8 @@ func TestUpdateGroupModelsFailuresDoNotPublish(t *testing.T) {
 			Models: optionalGroupModels{
 				Set: true,
 				Values: []GroupModel{
-					{ID: "provider-a", Alias: "public", AliasEnabled: true},
-					{ID: "provider-b", Alias: "public", AliasEnabled: true},
+					{ID: "provider-a", Aliases: []string{"public"}, AliasEnabled: true},
+					{ID: "provider-b", Aliases: []string{"public"}, AliasEnabled: true},
 				},
 			},
 		})
@@ -488,7 +511,7 @@ func TestUpdateGroupModelsFailuresDoNotPublish(t *testing.T) {
 		_, err := fixture.service.UpdateGroupModels(t.Context(), groupID, GroupModelsUpdateRequest{
 			Models: optionalGroupModels{
 				Set:    true,
-				Values: []GroupModel{{ID: "provider-new", Alias: "new-public", AliasEnabled: true}},
+				Values: []GroupModel{{ID: "provider-new", Aliases: []string{"new-public"}, AliasEnabled: true}},
 			},
 		})
 		if err == nil {
@@ -504,7 +527,7 @@ func TestUpdateGroupModelsFailuresDoNotPublish(t *testing.T) {
 			Params:    json.RawMessage(`{"base_url":"https://commit-failure-models.example.com/v1"}`),
 			Models: optionalGroupModels{
 				Set:    true,
-				Values: []GroupModel{{ID: "provider-old", Alias: "old-public", AliasEnabled: true}},
+				Values: []GroupModel{{ID: "provider-old", Aliases: []string{"old-public"}, AliasEnabled: true}},
 			},
 			Credentials: "sk-commit-models", ConnectionType: "api_key",
 		})
@@ -519,7 +542,7 @@ func TestUpdateGroupModelsFailuresDoNotPublish(t *testing.T) {
 		_, err = fixture.service.UpdateGroupModels(t.Context(), created.GroupID, GroupModelsUpdateRequest{
 			Models: optionalGroupModels{
 				Set:    true,
-				Values: []GroupModel{{ID: "provider-new", Alias: "new-public", AliasEnabled: true}},
+				Values: []GroupModel{{ID: "provider-new", Aliases: []string{"new-public"}, AliasEnabled: true}},
 			},
 		})
 		var apiErr *app_errors.APIError

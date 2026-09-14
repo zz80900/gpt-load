@@ -479,7 +479,9 @@ func TestLoaderMapsSystemAndGroupRows(t *testing.T) {
 		got.Name != disabled.Name || got.Enabled {
 		t.Fatalf("disabled GroupCatalog entry = %#v", got)
 	}
-	if len(view.Models) != 3 || view.Models[0].Alias != "Primary" || view.Models[1].Alias != "Secondary" {
+	if len(view.Models) != 3 ||
+		len(view.Models[0].Aliases) != 1 || view.Models[0].Aliases[0] != "Primary" ||
+		len(view.Models[1].Aliases) != 1 || view.Models[1].Aliases[0] != "Secondary" {
 		t.Errorf("group models = %#v, want all aliases retained", view.Models)
 	}
 	if view.Timeouts.FirstByte != 20*time.Second || view.Timeouts.Request != 30*time.Second {
@@ -493,13 +495,16 @@ func TestLoaderMapsSystemAndGroupRows(t *testing.T) {
 	}
 
 	openAICandidates := snapshot.ExecutionCandidates[protocol.OpenAICompletions][execution.OperationChatCompletion]
-	if len(openAICandidates) != 3 {
-		t.Fatalf("OpenAI candidates = %#v, want three external model names", openAICandidates)
+	// 每个模型贡献上游 ID 与别名两个可路由名称；两条同 ID 记录的 ID 会合并为一次。
+	if len(openAICandidates) != 5 {
+		t.Fatalf("OpenAI candidates = %#v, want id and alias names", openAICandidates)
 	}
 	for external, upstream := range map[string]string{
 		"Primary":   "gpt-4o",
 		"Secondary": "gpt-4o",
 		"Other":     "gpt-4.1",
+		"gpt-4o":    "gpt-4o",
+		"gpt-4.1":   "gpt-4.1",
 	} {
 		if got := openAICandidates[external]; len(got) != 1 || got[0].GroupID != enabled.ID || got[0].UpstreamModelID != upstream {
 			t.Errorf("%s candidates = %#v, want one route to %q for group %d", external, got, upstream, enabled.ID)

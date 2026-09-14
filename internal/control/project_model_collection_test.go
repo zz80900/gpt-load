@@ -34,10 +34,15 @@ func TestProjectModelsSeparateSameUpstreamModelByChannelAndDetail(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all.Items) != 2 || all.Items[0].ClientModel != "client-a" || all.Items[1].ClientModel != "client-b" {
+	// 上游 ID 与别名并列可见，所以模型页会同时列出 client-a、client-b 和 upstream-x。
+	if len(all.Items) != 3 || all.Items[0].ClientModel != "client-a" ||
+		all.Items[1].ClientModel != "client-b" || all.Items[2].ClientModel != "upstream-x" {
 		t.Fatalf("client model overview = %#v", all.Items)
 	}
-	if len(all.Items[0].UpstreamModels) != 2 || len(all.Items[1].UpstreamModels) != 1 {
+	// client-a 同时被 enabled 与 disabled 两个分组用作别名，所以它对应 2 个上游；
+	// client-b 只出现在 enabled 组；upstream-x 作为 ID 在两组都可见。
+	if len(all.Items[0].UpstreamModels) != 2 || len(all.Items[1].UpstreamModels) != 1 ||
+		len(all.Items[2].UpstreamModels) != 2 {
 		t.Fatalf("channel-scoped upstream overview = %#v", all.Items)
 	}
 	upstream := all.Items[1].UpstreamModels[0]
@@ -69,7 +74,7 @@ func TestProjectModelsSeparateSameUpstreamModelByChannelAndDetail(t *testing.T) 
 	}
 	if detail.ModelID != "upstream-x" || detail.Price.ChannelID != "openai_compatible" ||
 		detail.Price.ChannelName != "OpenAI Compatible" ||
-		detail.ClientModelCount != 2 || detail.GroupCount != 1 || len(detail.Associations) != 2 {
+		detail.ClientModelCount != 3 || detail.GroupCount != 1 || len(detail.Associations) != 3 {
 		t.Fatalf("upstream detail = %#v", detail)
 	}
 	if detail.Associations[0].ClientModel != "client-a" || detail.Associations[0].Group.Name != "enabled" {
@@ -169,12 +174,15 @@ func TestProjectModelsHTTPScopesAccessKeyFiltersAndRelationships(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode AccessKey models: %v", err)
 	}
-	if envelope.Data.Summary.ClientModelCount != 2 ||
-		envelope.Data.Summary.UpstreamModelCount != 4 ||
+	// 上游 ID 与别名并列可见：过滤命中 client-a / shared 的模型，其 ID 也会一并列出。
+	if envelope.Data.Summary.ClientModelCount != 4 ||
+		envelope.Data.Summary.UpstreamModelCount != 8 ||
 		envelope.Data.Summary.PriceCount != 4 ||
-		len(envelope.Data.Items) != 2 ||
+		len(envelope.Data.Items) != 4 ||
 		envelope.Data.Items[0].ClientModel != "client-a" ||
-		envelope.Data.Items[1].ClientModel != "shared" {
+		envelope.Data.Items[1].ClientModel != "shared" ||
+		envelope.Data.Items[2].ClientModel != "upstream-a" ||
+		envelope.Data.Items[3].ClientModel != "upstream-shared" {
 		t.Fatalf("AccessKey model response = %#v", envelope.Data)
 	}
 	shared := envelope.Data.Items[1]

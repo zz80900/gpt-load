@@ -74,7 +74,7 @@ func TestGroupCatalogSyncTriggerOnlyTracksProviderAndModelIDChanges(t *testing.T
 		ChannelID: channel.OpenAI,
 		Params:    json.RawMessage(`{}`),
 		Models: optionalGroupModels{Set: true, Values: []GroupModel{
-			{ID: "model-a", Alias: "public-a", AliasEnabled: true},
+			{ID: "model-a", Aliases: []string{"public-a"}, AliasEnabled: true},
 		}},
 		Credentials: "sk-catalog-trigger", ConnectionType: "api_key",
 	})
@@ -100,7 +100,7 @@ func TestGroupCatalogSyncTriggerOnlyTracksProviderAndModelIDChanges(t *testing.T
 
 	if _, err := fixture.service.UpdateGroupModels(t.Context(), created.GroupID, GroupModelsUpdateRequest{
 		Models: optionalGroupModels{Set: true, Values: []GroupModel{
-			{ID: "model-a", Alias: "renamed", AliasEnabled: true},
+			{ID: "model-a", Aliases: []string{"renamed"}, AliasEnabled: true},
 		}},
 	}); err != nil {
 		t.Fatal(err)

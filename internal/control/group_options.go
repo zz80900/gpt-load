@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"gorm.io/gorm"
 
 	"gpt-load/internal/channel"
 	app_errors "gpt-load/internal/platform/errors"
+	"gpt-load/internal/state"
 	"gpt-load/internal/storage/models"
 )
 
@@ -117,13 +117,18 @@ func mapGroupOptions(rows []groupOptionRow, registries ...*channel.Registry) ([]
 			Params:         append(json.RawMessage(nil), params...), Enabled: row.Enabled,
 			Models: make([]string, 0, len(models)),
 		}
+		// 模型候选集展开为「ID + 全部别名」：客户端可用其中任意一个名称请求。
+		// 存量分组可能存在同一 ID 的多个条目，这里按名称去重。
+		seenNames := make(map[string]struct{}, len(models))
 		for _, model := range models {
-			alias := strings.TrimSpace(model.Alias)
-			if alias != "" {
-				option.Models = append(option.Models, alias)
-				continue
+			names := state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
+			for _, name := range names {
+				if _, duplicate := seenNames[name]; duplicate {
+					continue
+				}
+				seenNames[name] = struct{}{}
+				option.Models = append(option.Models, name)
 			}
-			option.Models = append(option.Models, strings.TrimSpace(model.ID))
 		}
 		options = append(options, option)
 	}

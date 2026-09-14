@@ -1439,7 +1439,7 @@ func TestUpdateGroupModelsEndpointRejectsStrictInvalidBodiesWithoutMutation(t *t
 		Params:    json.RawMessage(`{"base_url":"https://model-save-http-invalid.example.com/v1"}`),
 		Models: optionalGroupModels{
 			Set:    true,
-			Values: []GroupModel{{ID: "provider-old", Alias: "old-public", AliasEnabled: true}},
+			Values: []GroupModel{{ID: "provider-old", Aliases: []string{"old-public"}, AliasEnabled: true}},
 		},
 		Credentials: "sk-model-save-http-invalid", ConnectionType: "api_key",
 	})
@@ -1531,7 +1531,7 @@ func TestGroupModelsHTTPReturnsStructuredConflictWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestGroupModelsHTTPRejectsMissingAliasEnabledWithoutMutation(t *testing.T) {
+func TestGroupModelsHTTPAcceptsLegacyAliasWireShape(t *testing.T) {
 	t.Parallel()
 	initControlI18n(t)
 	fixture := newServiceFixture(t)
@@ -1539,26 +1539,48 @@ func TestGroupModelsHTTPRejectsMissingAliasEnabledWithoutMutation(t *testing.T) 
 	groupID := createGroupForCredentialImport(t, fixture, "sk-model-alias-default")
 	engine := gin.New()
 	NewServer(&config.Config{AuthKey: "test-auth-key"}, fixture.service).RegisterRoutes(engine)
-	beforeRevision := fixture.manager.Current().Revision
-	beforeModels := loadCreatedGroupModels(t, fixture, groupID)
 
-	recorder := serveRawGroupModelsUpdateRequest(
-		t,
-		engine,
-		"test-auth-key",
-		"en-US",
-		strconv.FormatUint(uint64(groupID), 10),
-		`{"models":[{"id":"gpt-4o","alias":"legacy-name"}]}`,
-	)
-	if recorder.Code != http.StatusBadRequest ||
-		!strings.Contains(recorder.Body.String(), `"code":"VALIDATION_FAILED"`) {
-		t.Fatalf("response = %d %s, want 400 VALIDATION_FAILED", recorder.Code, recorder.Body.String())
+	// 旧客户端提交的是「开关 + 单别名字段」形态，没有 aliases 数组。陈旧的前端
+	// bundle 与发布冒烟脚本都还在用这个形状，必须继续被接受并折叠成别名列表；
+	// 新字段一旦出现则以其为准。
+	cases := []struct {
+		name string
+		body string
+		want []GroupModel
+	}{
+		{
+			name: "legacy alias without the switch flag still folds in",
+			body: `{"models":[{"id":"gpt-4o","alias":"legacy-name"}]}`,
+			want: []GroupModel{{ID: "gpt-4o", Aliases: []string{"legacy-name"}}},
+		},
+		{
+			name: "empty legacy alias yields no aliases",
+			body: `{"models":[{"id":"gpt-4o","alias":"","alias_enabled":false}]}`,
+			want: []GroupModel{{ID: "gpt-4o", Aliases: []string{}}},
+		},
+		{
+			name: "aliases array wins over legacy fields",
+			body: `{"models":[{"id":"gpt-4o","aliases":["new-name"],"alias":"legacy-name","alias_enabled":true}]}`,
+			want: []GroupModel{{ID: "gpt-4o", Aliases: []string{"new-name"}}},
+		},
 	}
-	if fixture.manager.Current().Revision != beforeRevision {
-		t.Fatal("missing alias_enabled published a Snapshot")
-	}
-	if got := loadCreatedGroupModels(t, fixture, groupID); !reflect.DeepEqual(got, beforeModels) {
-		t.Fatalf("missing alias_enabled changed persistence: got=%#v want=%#v", got, beforeModels)
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := serveRawGroupModelsUpdateRequest(
+				t,
+				engine,
+				"test-auth-key",
+				"en-US",
+				strconv.FormatUint(uint64(groupID), 10),
+				test.body,
+			)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("response = %d %s, want 200", recorder.Code, recorder.Body.String())
+			}
+			if got := loadCreatedGroupModels(t, fixture, groupID); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("persisted models = %#v, want %#v", got, test.want)
+			}
+		})
 	}
 }
 
@@ -1572,7 +1594,7 @@ func TestUpdateGroupModelsEndpointIDsAuthNotFoundAndSuccessDTO(t *testing.T) {
 		Params:    json.RawMessage(`{"base_url":"https://model-save-http.example.com/v1"}`),
 		Models: optionalGroupModels{
 			Set:    true,
-			Values: []GroupModel{{ID: "provider-old", Alias: "old-public", AliasEnabled: true}},
+			Values: []GroupModel{{ID: "provider-old", Aliases: []string{"old-public"}, AliasEnabled: true}},
 		},
 		Credentials: "sk-model-save-http", ConnectionType: "api_key",
 	})
@@ -1657,7 +1679,7 @@ func TestUpdateGroupModelsEndpointIDsAuthNotFoundAndSuccessDTO(t *testing.T) {
 	}
 	want := GroupModelsResponse{
 		Items: []GroupModelResponse{{
-			ID: "provider-new", Alias: "new-public", AliasEnabled: true, ClientModel: "new-public", PricingStatus: PricingStatusPending,
+			ID: "provider-new", Aliases: []string{"new-public"}, ClientModels: []string{"provider-new", "new-public"}, PricingStatus: PricingStatusPending,
 		}},
 		Total:   1,
 		Pending: 1,

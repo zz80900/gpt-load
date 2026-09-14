@@ -873,7 +873,7 @@ func newStreamingGatewayEngine(t *testing.T, groups ...streamGatewayGroup) (*gin
 		baseURL := testUpstreamBaseURL(group.upstreamURL, protocol.OpenAICompletions)
 		channelID, params := testChannelConfig(t, protocol.OpenAICompletions, baseURL)
 		groupConfigs = append(groupConfigs, state.GroupConfig{ConnectionType: "api_key", ID: group.id, Name: group.name, ChannelID: channelID, Params: params,
-			Models: []state.ModelConfig{{ID: modelID, Alias: group.alias}}, Enabled: true,
+			Models: []state.ModelConfig{{ID: modelID, Aliases: []string{group.alias}}}, Enabled: true,
 		})
 		credentialID := uint(index + 1)
 		entries = append(entries, testCredentialEntry(t, keyService, credentialID, group.id, group.apiKey))

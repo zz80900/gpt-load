@@ -1216,7 +1216,7 @@ func TestHandlerUsesSelectedProviderModelForPricingInsteadOfAliasOrBodyModel(t *
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []state.GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "provider", ChannelID: channel.OpenAI,
 			Params: json.RawMessage(`{}`),
-			Models: []state.ModelConfig{{ID: model, Alias: "client-alias"}}, Enabled: true,
+			Models: []state.ModelConfig{{ID: model, Aliases: []string{"client-alias"}}}, Enabled: true,
 		}},
 		Credentials: []state.CredentialConfig{testCredentialConfig(1, 1)},
 		AccessKeys: []state.AccessKeyConfig{{

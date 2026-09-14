@@ -808,7 +808,7 @@ func TestCreateSubscriptionGroupRollsBackStageOnFailure(t *testing.T) {
 	_, err = fixture.service.CreateGroupIdempotent(t.Context(), "00000000-0000-4000-8000-000000000778", GroupCreateRequest{
 		Name: stringPointer("invalid subscription group"), ChannelID: channel.Codex,
 		ConnectionType:      models.ConnectionTypeSubscription,
-		Models:              optionalGroupModels{Set: true, Values: []GroupModel{{ID: "", Alias: "invalid"}}},
+		Models:              optionalGroupModels{Set: true, Values: []GroupModel{{ID: "", Aliases: []string{"invalid"}}}},
 		StagedCredentialIDs: []string{stage.StageID},
 	})
 	if err == nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -61,15 +62,30 @@ type CredentialConfig struct {
 }
 
 type ModelConfig struct {
-	ID    string
-	Alias string
+	ID      string
+	Aliases []string
 }
 
-func externalModelName(model ModelConfig) string {
-	if alias := strings.TrimSpace(model.Alias); alias != "" {
-		return alias
+// ExternalModelNames 返回模型对客户端可见的全部名称：上游 ID 在首位，其后是
+// 各别名，顺序与配置一致。空白项、与 ID 相同的项以及重复项都会被丢弃，保证同一
+// 模型不会把同一个名字注册两次。
+//
+// 返回顺序稳定（ID 恒在首位）是 client_models 可被前端断言、以及路由索引去重的
+// 前提，改动时必须保持。
+func ExternalModelNames(model ModelConfig) []string {
+	id := strings.TrimSpace(model.ID)
+	names := make([]string, 0, 1+len(model.Aliases))
+	if id != "" {
+		names = append(names, id)
 	}
-	return strings.TrimSpace(model.ID)
+	for _, alias := range model.Aliases {
+		trimmed := strings.TrimSpace(alias)
+		if trimmed == "" || trimmed == id || slices.Contains(names, trimmed) {
+			continue
+		}
+		names = append(names, trimmed)
+	}
+	return names
 }
 
 type AccessKeyConfig struct {
@@ -329,6 +345,12 @@ func (snapshot *ConfigSnapshot) AccessQuotaDefinitions() map[uint][]accessquota.
 	return definitions
 }
 
+// modelRegistration 是路由索引的注册单元：一个对外名称指向一个上游模型。
+type modelRegistration struct {
+	upstreamID string
+	name       string
+}
+
 func appendExecutionTargets(
 	index ExecutionCandidateIndex,
 	registry *channel.Registry,
@@ -345,6 +367,22 @@ func appendExecutionTargets(
 	// 模型配置是分组进入数据面调度的统一门槛；无模型资源请求也不能绕过。
 	if len(group.Models) == 0 {
 		return nil
+	}
+	// 注册表只与分组模型有关，与协议、操作无关，因此在这里算一次即可。
+	// 同一上游模型的多个配置条目（单别名时代的存量写法）会为同一个名字重复认领，
+	// 这里按名称去重：否则同一 (名称 → 上游) 会在索引里出现两次，放大该目标的候选
+	// 权重，并让失败重试反复落到同一个 target。
+	registrations := make([]modelRegistration, 0, len(group.Models))
+	claimed := make(map[string]struct{}, len(group.Models))
+	for _, model := range group.Models {
+		upstreamID := strings.TrimSpace(model.ID)
+		for _, name := range ExternalModelNames(model) {
+			if _, duplicate := claimed[name]; duplicate {
+				continue
+			}
+			claimed[name] = struct{}{}
+			registrations = append(registrations, modelRegistration{upstreamID: upstreamID, name: name})
+		}
 	}
 	for _, clientProtocol := range descriptor.ClientProtocols {
 		for _, operation := range target.Operations(clientProtocol) {
@@ -376,13 +414,14 @@ func appendExecutionTargets(
 				execution.OperationImagesGenerate,
 				execution.OperationImagesEdit,
 				execution.OperationEmbeddingsCreate, execution.OperationRerank:
-				for _, model := range group.Models {
-					modelMode, supported := target.ModeForModel(clientProtocol, operation, model.ID)
+				for _, registration := range registrations {
+					modelMode, supported := target.ModeForModel(clientProtocol, operation, registration.upstreamID)
 					if !supported {
-						return fmt.Errorf("compile group %d channel has no route mode for %q/%q model %q", group.ID, clientProtocol, operation, model.ID)
+						return fmt.Errorf("compile group %d channel has no route mode for %q/%q model %q",
+							group.ID, clientProtocol, operation, registration.upstreamID)
 					}
-					appendExecutionTarget(index, clientProtocol, operation, externalModelName(model), RouteTarget{
-						GroupID: group.ID, UpstreamModelID: strings.TrimSpace(model.ID),
+					appendExecutionTarget(index, clientProtocol, operation, registration.name, RouteTarget{
+						GroupID: group.ID, UpstreamModelID: registration.upstreamID,
 						Mode: modelMode, ResolvedTarget: cloneResolvedTarget(target),
 					})
 				}
@@ -475,16 +514,22 @@ func validateCompileInput(input CompileInput) error {
 		if err := validateManualWeight(fmt.Sprintf("group %d", group.ID), group.WeightManual); err != nil {
 			return err
 		}
-		seenModels := make(map[string]struct{}, len(group.Models))
+		// 名称 → 认领它的上游模型 ID。同一 ID 的多个条目（单别名时代用户借它
+		// 表达「一个模型两个名」的存量写法）允许重复认领同一个名字；只有跨 ID
+		// 认领同名才构成冲突——那会让该名称解析到两个不同上游，路由结果将由
+		// 候选排序而非配置决定。
+		claimed := make(map[string]string, len(group.Models))
 		for _, model := range group.Models {
-			if strings.TrimSpace(model.ID) == "" {
+			id := strings.TrimSpace(model.ID)
+			if id == "" {
 				return fmt.Errorf("group %d model id is required", group.ID)
 			}
-			external := externalModelName(model)
-			if _, duplicate := seenModels[external]; duplicate {
-				return fmt.Errorf("group %d has duplicate external model %q", group.ID, external)
+			for _, name := range ExternalModelNames(model) {
+				if owner, exists := claimed[name]; exists && owner != id {
+					return fmt.Errorf("group %d has duplicate external model %q", group.ID, name)
+				}
+				claimed[name] = id
 			}
-			seenModels[external] = struct{}{}
 		}
 	}
 

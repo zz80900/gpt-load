@@ -65,7 +65,7 @@ func newAntigravityImagesRuntime(t *testing.T) (*gin.Engine, *Adapter, *antigrav
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []state.GroupConfig{{
 			ID: row.GroupID, Name: "antigravity", ChannelID: channel.Antigravity, ConnectionType: "subscription",
-			Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "gemini-3.1-flash-image", Alias: "public-image"}}, Enabled: true,
+			Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "gemini-3.1-flash-image", Aliases: []string{"public-image"}}}, Enabled: true,
 		}},
 		Credentials: []state.CredentialConfig{{
 			ID: row.ID, GroupID: row.GroupID, Status: state.CredentialStatusActive,

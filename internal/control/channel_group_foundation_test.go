@@ -271,7 +271,7 @@ func TestCreateChannelGroupPersistsCanonicalCredentialsAndPublishes(t *testing.T
 		ChannelID: channel.OpenAICompatible,
 		Params:    json.RawMessage(`{"base_url":" HTTPS://Proxy.Example/v1/ "}`),
 		Models: optionalGroupModels{Set: true, Values: []GroupModel{
-			{ID: " provider-model ", Alias: " public ", AliasEnabled: true},
+			{ID: " provider-model ", Aliases: []string{" public "}, AliasEnabled: true},
 		}},
 		Credentials: " sk-one \n sk-one\nsk-two\n", ConnectionType: "api_key",
 	})
@@ -329,7 +329,7 @@ func TestCreateChannelGroupPersistsCanonicalCredentialsAndPublishes(t *testing.T
 	if len(refs) != 2 || refs[0].Version == 0 || refs[0].IdentityGeneration == 0 || refs[0].Fingerprint == "" {
 		t.Fatalf("credential refs = %#v", refs)
 	}
-	if got := loadCreatedGroupModels(t, fixture, group.ID); !reflect.DeepEqual(got, []GroupModel{{ID: "provider-model", Alias: "public"}}) {
+	if got := loadCreatedGroupModels(t, fixture, group.ID); !reflect.DeepEqual(got, []GroupModel{{ID: "provider-model", Aliases: []string{"public"}}}) {
 		t.Fatalf("stored models = %#v", got)
 	}
 }
@@ -478,7 +478,7 @@ func TestChannelGroupCollectionDetailAndOptionsUseChannelCredentialContract(t *t
 		ChannelID: channel.OpenAICompatible,
 		Params:    json.RawMessage(`{"base_url":"https://collection.example/v1"}`),
 		Models: optionalGroupModels{Set: true, Values: []GroupModel{
-			{ID: "provider-model", Alias: "public-model", AliasEnabled: true},
+			{ID: "provider-model", Aliases: []string{"public-model"}, AliasEnabled: true},
 		}},
 		Credentials: "collection-key", ConnectionType: "api_key",
 	})
@@ -529,7 +529,7 @@ func TestChannelGroupCollectionDetailAndOptionsUseChannelCredentialContract(t *t
 	options, err := fixture.service.ListGroupOptions(t.Context())
 	if err != nil || len(options) != 1 || options[0].ChannelID != channel.OpenAICompatible ||
 		string(options[0].Params) != `{"base_url":"https://collection.example/v1"}` ||
-		!reflect.DeepEqual(options[0].Models, []string{"public-model"}) {
+		!reflect.DeepEqual(options[0].Models, []string{"provider-model", "public-model"}) {
 		t.Fatalf("ListGroupOptions() = %#v, %v", options, err)
 	}
 	assertNoLegacyGroupFields(t, options[0])

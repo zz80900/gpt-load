@@ -9,6 +9,7 @@ import (
 
 	app_errors "gpt-load/internal/platform/errors"
 	"gpt-load/internal/pricing"
+	"gpt-load/internal/state"
 	"gpt-load/internal/storage/models"
 )
 
@@ -17,10 +18,11 @@ type GroupModelsUpdateRequest struct {
 }
 
 type GroupModelResponse struct {
-	ID            string        `json:"id"`
-	Alias         string        `json:"alias"`
-	AliasEnabled  bool          `json:"alias_enabled"`
-	ClientModel   string        `json:"client_model"`
+	ID string `json:"id"`
+	// Aliases 必须序列化为 []（而非 null），否则前端 projectArray 会判定响应非法。
+	Aliases []string `json:"aliases"`
+	// ClientModels 是 [id, ...aliases]，顺序由 state.ExternalModelNames 决定。
+	ClientModels  []string      `json:"client_models"`
 	PricingStatus PricingStatus `json:"pricing_status"`
 }
 
@@ -70,15 +72,16 @@ func mapGroupModelsResponse(
 ) (GroupModelsResponse, error) {
 	result := GroupModelsResponse{Items: make([]GroupModelResponse, 0, len(groupModels))}
 	for _, model := range groupModels {
-		item := GroupModelResponse{
-			ID:            model.ID,
-			Alias:         model.Alias,
-			AliasEnabled:  model.Alias != "",
-			ClientModel:   model.ID,
-			PricingStatus: PricingStatusPending,
+		aliases := model.Aliases
+		if aliases == nil {
+			aliases = []string{}
 		}
-		if item.AliasEnabled {
-			item.ClientModel = model.Alias
+		item := GroupModelResponse{
+			ID:      model.ID,
+			Aliases: aliases,
+			// 复用 state 的名称拼装，保证与数据面路由索引的顺序不变量一致。
+			ClientModels:  state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: aliases}),
+			PricingStatus: PricingStatusPending,
 		}
 		item.PricingStatus = resolvePricingStatus(rows[pricing.Identity{ChannelID: channelID, ModelID: model.ID}])
 		if item.PricingStatus == PricingStatusPending {

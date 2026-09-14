@@ -1671,7 +1671,7 @@ func TestHandlerEnforcesModelUTF8ByteLimitBeforeAttempt(t *testing.T) {
 				Groups: []state.GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "openai", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
 					Models: []state.ModelConfig{{
 						ID:    "gpt-4o",
-						Alias: test.model,
+						Aliases: []string{test.model},
 					}},
 					Enabled: true,
 				}},
@@ -4630,13 +4630,13 @@ func TestHandlerDoesNotExposeAliasedUpstreamModelWhenRetryBudgetIsExhausted(t *t
 		dialect.NewSet(dialect.NewOpenAI()),
 		dialectGatewayGroup{id: 1, name: "openai-1", upstreamURL: upstream.URL,
 			apiKeys: []string{"sk-one"},
-			models:  []state.ModelConfig{{ID: upstreamModel, Alias: externalModel}}},
+			models:  []state.ModelConfig{{ID: upstreamModel, Aliases: []string{externalModel}}}},
 		dialectGatewayGroup{id: 2, name: "openai-2", upstreamURL: upstream.URL,
 			apiKeys: []string{"sk-two"},
-			models:  []state.ModelConfig{{ID: upstreamModel, Alias: externalModel}}},
+			models:  []state.ModelConfig{{ID: upstreamModel, Aliases: []string{externalModel}}}},
 		dialectGatewayGroup{id: 3, name: "openai-3", upstreamURL: upstream.URL,
 			apiKeys: []string{"sk-three"},
-			models:  []state.ModelConfig{{ID: upstreamModel, Alias: externalModel}}},
+			models:  []state.ModelConfig{{ID: upstreamModel, Aliases: []string{externalModel}}}},
 	)
 	request := httptest.NewRequest(
 		http.MethodPost,
@@ -5139,7 +5139,7 @@ func newResponsesStoreHandlerRuntime(
 		Name:           "codex",
 		ChannelID:      channel.Codex,
 		Params:         json.RawMessage(`{}`),
-		Models:         []state.ModelConfig{{ID: "gpt-codex", Alias: "gpt"}},
+		Models:         []state.ModelConfig{{ID: "gpt-codex", Aliases: []string{"gpt"}}},
 		Enabled:        true,
 	}}
 	credentials := []state.CredentialConfig{{
@@ -5153,7 +5153,7 @@ func newResponsesStoreHandlerRuntime(
 			Name:           "openai",
 			ChannelID:      channel.OpenAI,
 			Params:         json.RawMessage(`{}`),
-			Models:         []state.ModelConfig{{ID: "gpt-openai", Alias: "gpt"}},
+			Models:         []state.ModelConfig{{ID: "gpt-openai", Aliases: []string{"gpt"}}},
 			Enabled:        true,
 		})
 		credentials = append(credentials, state.CredentialConfig{
@@ -5359,11 +5359,11 @@ func newConvertedFallbackHandlerTestRuntime(
 	groups := []state.GroupConfig{
 		{ConnectionType: "api_key", ID: 1, Name: "compatible-one", ChannelID: channel.OpenAICompatible,
 			Params: json.RawMessage(`{"base_url":"https://one.example/v1"}`), Enabled: true,
-			Models: []state.ModelConfig{{ID: "upstream-one", Alias: "claude-client"}},
+			Models: []state.ModelConfig{{ID: "upstream-one", Aliases: []string{"claude-client"}}},
 		},
 		{ConnectionType: "api_key", ID: 2, Name: "compatible-two", ChannelID: channel.OpenAICompatible,
 			Params: json.RawMessage(`{"base_url":"https://two.example/v1"}`), Enabled: true,
-			Models: []state.ModelConfig{{ID: "upstream-two", Alias: "claude-client"}},
+			Models: []state.ModelConfig{{ID: "upstream-two", Aliases: []string{"claude-client"}}},
 		},
 	}
 	if len(groupSettings) > 0 {

@@ -252,37 +252,39 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 			if !exists {
 				return ProjectModelListResponse{}, fmt.Errorf("missing model price row for %s: %w", identity.ModelID, app_errors.ErrInternalServer)
 			}
-			clientModel := model.ID
-			if strings.TrimSpace(model.Alias) != "" {
-				clientModel = model.Alias
-			}
-			root := records[clientModel]
-			if root == nil {
-				root = &projectModelRecord{
-					clientModel: clientModel,
-					protocols:   []protocol.Protocol{},
-					upstreams:   make(map[pricing.Identity]*projectModelUpstreamRecord),
+			// 每个对外名称（ID 或别名）都是客户端可用的模型名，各自建一条记录；
+			// 一个模型配 N 个别名，就会在模型页出现 N+1 条，与 /v1/models 的可见集合一致。
+			names := state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
+			for _, clientModel := range names {
+				root := records[clientModel]
+				if root == nil {
+					root = &projectModelRecord{
+						clientModel: clientModel,
+						protocols:   []protocol.Protocol{},
+						upstreams:   make(map[pricing.Identity]*projectModelUpstreamRecord),
+					}
+					records[clientModel] = root
 				}
-				records[clientModel] = root
-			}
-			root.protocols = mergeProjectModelProtocols(root.protocols, group.dto.ClientProtocols)
-			upstream := root.upstreams[identity]
-			if upstream == nil {
-				affectedGroups, err := projectModelAffectedGroups(identity, references, groupDTOs)
-				if err != nil {
-					return ProjectModelListResponse{}, err
+				root.protocols = mergeProjectModelProtocols(root.protocols, group.dto.ClientProtocols)
+				upstream := root.upstreams[identity]
+				if upstream == nil {
+					affectedGroups, err := projectModelAffectedGroups(identity, references, groupDTOs)
+					if err != nil {
+						return ProjectModelListResponse{}, err
+					}
+					upstream = &projectModelUpstreamRecord{
+						modelID:      model.ID,
+						aliasApplied: clientModel != strings.TrimSpace(model.ID),
+						price:        priceRecord.dto, affectedGroups: affectedGroups,
+						catalogReference: projectModelCatalogReference(priceRecord.dto, identity, catalogSnapshot),
+						groupSeen:        make(map[uint]struct{}),
+					}
+					root.upstreams[identity] = upstream
 				}
-				upstream = &projectModelUpstreamRecord{
-					modelID: model.ID, aliasApplied: strings.TrimSpace(model.Alias) != "",
-					price: priceRecord.dto, affectedGroups: affectedGroups,
-					catalogReference: projectModelCatalogReference(priceRecord.dto, identity, catalogSnapshot),
-					groupSeen:        make(map[uint]struct{}),
+				if _, duplicate := upstream.groupSeen[group.row.ID]; !duplicate {
+					upstream.groupSeen[group.row.ID] = struct{}{}
+					upstream.routeGroups = append(upstream.routeGroups, group.dto)
 				}
-				root.upstreams[identity] = upstream
-			}
-			if _, duplicate := upstream.groupSeen[group.row.ID]; !duplicate {
-				upstream.groupSeen[group.row.ID] = struct{}{}
-				upstream.routeGroups = append(upstream.routeGroups, group.dto)
 			}
 		}
 	}
@@ -408,14 +410,12 @@ func scopeProjectModelGroups(
 		}
 		filteredModels := make([]GroupModel, 0, len(groupModels))
 		for _, model := range groupModels {
-			clientModel := strings.TrimSpace(model.Alias)
-			if clientModel == "" {
-				clientModel = strings.TrimSpace(model.ID)
-			}
-			if len(accessKey.Filters.Models) > 0 {
-				if _, allowed := accessKey.Filters.Models[clientModel]; !allowed {
-					continue
-				}
+			if len(accessKey.Filters.Models) > 0 &&
+				!modelMatchesNameFilter(
+					state.ModelConfig{ID: model.ID, Aliases: model.Aliases},
+					accessKey.Filters.Models,
+				) {
+				continue
 			}
 			filteredModels = append(filteredModels, model)
 		}
@@ -480,6 +480,8 @@ func (s *Service) GetUpstreamModelDetail(ctx context.Context, priceID uint) (Ups
 	if err != nil {
 		return UpstreamModelDetailDTO{}, fmt.Errorf("validate model detail price identity: %w", app_errors.ErrInternalServer)
 	}
+	// 同一分组可能用多条同 ID 记录表达多个别名，名称与分组的组合会重复出现。
+	seenAssociations := make(map[string]struct{})
 	for _, group := range groupRecords {
 		if group.row.ChannelID != row.ChannelID {
 			continue
@@ -488,15 +490,19 @@ func (s *Service) GetUpstreamModelDetail(ctx context.Context, priceID uint) (Ups
 			if model.ID != row.ModelID {
 				continue
 			}
-			clientModel := model.ID
-			aliasApplied := strings.TrimSpace(model.Alias) != ""
-			if aliasApplied {
-				clientModel = model.Alias
+			for _, clientModel := range state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
+				key := fmt.Sprintf("%d\x00%s", group.row.ID, clientModel)
+				if _, duplicate := seenAssociations[key]; duplicate {
+					continue
+				}
+				seenAssociations[key] = struct{}{}
+				associations = append(associations, UpstreamModelAssociationDTO{
+					ClientModel:  clientModel,
+					AliasApplied: clientModel != strings.TrimSpace(model.ID),
+					Group:        group.dto,
+				})
+				clientModels[clientModel] = struct{}{}
 			}
-			associations = append(associations, UpstreamModelAssociationDTO{
-				ClientModel: clientModel, AliasApplied: aliasApplied, Group: group.dto,
-			})
-			clientModels[clientModel] = struct{}{}
 			groupIDs[group.row.ID] = struct{}{}
 		}
 	}

@@ -55,7 +55,7 @@ func TestCreateGroupIdempotentReplaysOriginalCountsAndPreservesCredentialMultipl
 	assertAPIErrorCode(t, err, app_errors.ErrIdempotencyKeyReused.Code)
 }
 
-func TestCreateGroupIdempotentCanonicalizesDisabledAliasesAndReplaysNarrowResult(t *testing.T) {
+func TestCreateGroupIdempotentCanonicalizesAliasesAndReplaysNarrowResult(t *testing.T) {
 	t.Parallel()
 	fixture := newServiceFixture(t)
 	request := GroupCreateRequest{
@@ -64,9 +64,8 @@ func TestCreateGroupIdempotentCanonicalizesDisabledAliasesAndReplaysNarrowResult
 		Params:    json.RawMessage(`{"base_url":"https://canonical-models.example.com"}`),
 		Models: optionalGroupModels{
 			Set: true,
-			Values: []GroupModel{{
-				ID: "provider-model", Alias: "discarded-a", AliasEnabled: false,
-			}},
+			// 别名带首尾空白：规范化后会与下面的 replay 请求等价。
+			Values: []GroupModel{{ID: "provider-model", Aliases: []string{"  kept-name  "}}},
 		},
 		Credentials: "key-one", ConnectionType: "api_key",
 	}
@@ -78,10 +77,8 @@ func TestCreateGroupIdempotentCanonicalizesDisabledAliasesAndReplaysNarrowResult
 	}
 	equivalent := request
 	equivalent.Models = optionalGroupModels{
-		Set: true,
-		Values: []GroupModel{{
-			ID: "provider-model", Alias: "discarded-b", AliasEnabled: false,
-		}},
+		Set:    true,
+		Values: []GroupModel{{ID: "provider-model", Aliases: []string{"kept-name"}}},
 	}
 	replayed, err := fixture.service.CreateGroupIdempotent(t.Context(), key, equivalent)
 	if err != nil {
@@ -109,7 +106,7 @@ func TestCreateGroupIdempotentCanonicalizesDisabledAliasesAndReplaysNarrowResult
 	if got := string(group.Overrides); got != `{}` {
 		t.Fatalf("stored config = %s, want empty override", got)
 	}
-	if stored := loadCreatedGroupModels(t, fixture, first.GroupID); !reflect.DeepEqual(stored, []GroupModel{{ID: "provider-model"}}) {
-		t.Fatalf("stored models = %#v, want disabled alias omitted", stored)
+	if stored := loadCreatedGroupModels(t, fixture, first.GroupID); !reflect.DeepEqual(stored, []GroupModel{{ID: "provider-model", Aliases: []string{"kept-name"}}}) {
+		t.Fatalf("stored models = %#v, want canonicalized alias retained", stored)
 	}
 }

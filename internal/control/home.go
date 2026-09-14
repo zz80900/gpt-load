@@ -279,20 +279,29 @@ func (s *Service) readHomeRows(
 	return result, nil
 }
 
+// modelMatchesNameFilter 判断模型的任一对外名称是否落在允许集合里。
+// 一个模型可能有多个名称（ID + 别名），只要有一个可用即视为可见。
+func modelMatchesNameFilter(model state.ModelConfig, allowed map[string]struct{}) bool {
+	for _, name := range state.ExternalModelNames(model) {
+		if _, ok := allowed[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func countHomeModels(snapshot *state.ConfigSnapshot) int64 {
-	names := make(map[string]struct{})
+	// 按上游模型去重而不是按对外名称：一个模型配置 N 个别名时，按名称计数会
+	// 把一个模型算成 N+1 个，与「有多少个模型」的语义不符。
+	models := make(map[string]struct{})
 	for _, group := range snapshot.Groups {
 		for _, model := range group.Models {
-			name := strings.TrimSpace(model.Alias)
-			if name == "" {
-				name = strings.TrimSpace(model.ID)
-			}
-			if name != "" {
-				names[name] = struct{}{}
+			if id := strings.TrimSpace(model.ID); id != "" {
+				models[id] = struct{}{}
 			}
 		}
 	}
-	return int64(len(names))
+	return int64(len(models))
 }
 
 func accessibleHomeGroups(
@@ -319,7 +328,7 @@ func accessibleHomeGroups(
 		if len(accessKey.Filters.Models) > 0 {
 			modelAllowed := false
 			for _, model := range group.Models {
-				if _, allowed := accessKey.Filters.Models[homeExternalModelName(model)]; allowed {
+				if modelMatchesNameFilter(model, accessKey.Filters.Models) {
 					modelAllowed = true
 					break
 				}
@@ -338,33 +347,25 @@ func countScopedHomeModels(
 	allowedGroups map[uint]struct{},
 	accessKey state.AccessKeyView,
 ) int64 {
-	names := make(map[string]struct{})
+	models := make(map[string]struct{})
 	for groupID := range allowedGroups {
 		group, exists := snapshot.Groups[groupID]
 		if !exists {
 			continue
 		}
 		for _, model := range group.Models {
-			name := homeExternalModelName(model)
-			if name == "" {
+			id := strings.TrimSpace(model.ID)
+			if id == "" {
 				continue
 			}
-			if len(accessKey.Filters.Models) > 0 {
-				if _, allowed := accessKey.Filters.Models[name]; !allowed {
-					continue
-				}
+			if len(accessKey.Filters.Models) > 0 &&
+				!modelMatchesNameFilter(model, accessKey.Filters.Models) {
+				continue
 			}
-			names[name] = struct{}{}
+			models[id] = struct{}{}
 		}
 	}
-	return int64(len(names))
-}
-
-func homeExternalModelName(model state.ModelConfig) string {
-	if alias := strings.TrimSpace(model.Alias); alias != "" {
-		return alias
-	}
-	return strings.TrimSpace(model.ID)
+	return int64(len(models))
 }
 
 func countHomeCredentials(

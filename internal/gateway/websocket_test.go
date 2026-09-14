@@ -33,7 +33,7 @@ func websocketTestHandler(t *testing.T, endpoint string, id channel.ID) (*Handle
 	t.Helper()
 	service := encryptiontest.Service(t, "websocket-fixture-key")
 	input := state.CompileInput{ChannelRegistry: channel.NewRegistry(),
-		Groups:      []state.GroupConfig{{ID: 1, Name: "ws", ConnectionType: "api_key", ChannelID: id, Params: json.RawMessage(fmt.Sprintf(`{"base_url":%q}`, endpoint)), Models: []state.ModelConfig{{ID: "upstream", Alias: "public"}}, Enabled: true}},
+		Groups:      []state.GroupConfig{{ID: 1, Name: "ws", ConnectionType: "api_key", ChannelID: id, Params: json.RawMessage(fmt.Sprintf(`{"base_url":%q}`, endpoint)), Models: []state.ModelConfig{{ID: "upstream", Aliases: []string{"public"}}}, Enabled: true}},
 		Credentials: []state.CredentialConfig{testCredentialConfig(1, 1)},
 		AccessKeys:  []state.AccessKeyConfig{{ID: 1, Name: "client", KeyHash: service.Hash("gl-client"), Status: state.AccessKeyStatusActive}},
 	}

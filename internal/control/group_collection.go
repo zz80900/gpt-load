@@ -437,20 +437,22 @@ func equalGroupCollectionWeight(left, right *int) bool {
 }
 
 func validateGroupCollectionModels(values []GroupModel) error {
-	seen := make(map[string]struct{}, len(values))
+	// 名称 → 认领它的上游模型 ID。同一 ID 的多个条目（单别名时代的存量写法，
+	// 用户借它表达「一个模型两个名」）允许重复认领同一个名字；只有跨 ID 认领
+	// 同名才构成冲突，因为那会让该名称解析到两个不同上游。
+	claimed := make(map[string]string, len(values))
 	for _, value := range values {
 		id := strings.TrimSpace(value.ID)
 		if id == "" {
 			return fmt.Errorf("model id is required")
 		}
-		external := strings.TrimSpace(value.Alias)
-		if external == "" {
-			external = id
+		names := state.ExternalModelNames(state.ModelConfig{ID: id, Aliases: value.Aliases})
+		for _, name := range names {
+			if owner, exists := claimed[name]; exists && owner != id {
+				return fmt.Errorf("duplicate external model %q", name)
+			}
+			claimed[name] = id
 		}
-		if _, duplicate := seen[external]; duplicate {
-			return fmt.Errorf("duplicate external model %q", external)
-		}
-		seen[external] = struct{}{}
 	}
 	return nil
 }

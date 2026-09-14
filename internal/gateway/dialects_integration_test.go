@@ -583,11 +583,11 @@ func TestGatewayRewritesEachAttemptFromOriginal(t *testing.T) {
 		dialect.NewSet(dialect.NewOpenAI()),
 		dialectGatewayGroup{
 			id: 1, name: "first", upstreamURL: first.URL, apiKeys: []string{"sk-first"},
-			models: []state.ModelConfig{{ID: "provider-one", Alias: "public"}},
+			models: []state.ModelConfig{{ID: "provider-one", Aliases: []string{"public"}}},
 		},
 		dialectGatewayGroup{
 			id: 2, name: "second", upstreamURL: second.URL, apiKeys: []string{"sk-second"},
-			models: []state.ModelConfig{{ID: "provider-two", Alias: "public"}},
+			models: []state.ModelConfig{{ID: "provider-two", Aliases: []string{"public"}}},
 		},
 	)
 	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"public"}`))
@@ -641,12 +641,12 @@ func TestGatewayAppliesEachGroupsParameterOverridesFromOriginal(t *testing.T) {
 		dialect.NewSet(dialect.NewOpenAI()),
 		dialectGatewayGroup{
 			id: 1, name: "first", upstreamURL: first.URL, apiKeys: []string{"sk-first"},
-			models:   []state.ModelConfig{{ID: "provider-one", Alias: "public"}},
+			models:   []state.ModelConfig{{ID: "provider-one", Aliases: []string{"public"}}},
 			settings: rules("first"),
 		},
 		dialectGatewayGroup{
 			id: 2, name: "second", upstreamURL: second.URL, apiKeys: []string{"sk-second"},
-			models:   []state.ModelConfig{{ID: "provider-two", Alias: "public"}},
+			models:   []state.ModelConfig{{ID: "provider-two", Aliases: []string{"public"}}},
 			settings: rules("second"),
 		},
 	)
@@ -806,7 +806,7 @@ func TestForwarderRewritesAliasedNonStreamingResponses(t *testing.T) {
 			engine, _ := newDialectGatewayEngine(t, test.value, "public-model", test.dialects,
 				dialectGatewayGroup{
 					id: 1, name: test.name, upstreamURL: upstream.URL, apiKeys: []string{"provider-key"},
-					models: []state.ModelConfig{{ID: "provider-model", Alias: "public-model"}},
+					models: []state.ModelConfig{{ID: "provider-model", Aliases: []string{"public-model"}}},
 				},
 			)
 			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.requestBody))
@@ -953,7 +953,7 @@ func TestGatewayRewritesAliasedStreams(t *testing.T) {
 			engine, _ := newDialectGatewayEngine(t, test.value, "public-model", test.dialects,
 				dialectGatewayGroup{
 					id: 1, name: test.name, upstreamURL: upstream.URL, apiKeys: []string{"provider-key"},
-					models: []state.ModelConfig{{ID: "provider-model", Alias: "public-model"}},
+					models: []state.ModelConfig{{ID: "provider-model", Aliases: []string{"public-model"}}},
 				},
 			)
 			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.requestBody))

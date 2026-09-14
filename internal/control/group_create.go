@@ -223,7 +223,7 @@ func (s *Service) normalizeGroupCreate(
 
 	runtimeModels := make([]state.ModelConfig, 0, len(groupModels))
 	for _, model := range groupModels {
-		runtimeModels = append(runtimeModels, state.ModelConfig{ID: model.ID, Alias: model.Alias})
+		runtimeModels = append(runtimeModels, state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 	}
 	systemSettings, globalProxy, err := stateloader.LoadSystemSettingsAndProxy(ctx, s.db, s.encryption)
 	if parentErr := ctx.Err(); parentErr != nil {

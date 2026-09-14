@@ -324,7 +324,7 @@ func TestValidationWorkerFallsBackToFirstRealModelID(t *testing.T) {
 	probes := &validationProbeRecorder{}
 	worker := newValidationWorkerForTest(
 		validationSnapshot(map[uint]state.GroupView{
-			1: validationGroup([]protocol.Protocol{protocol.OpenAICompletions}, " \t", []state.ModelConfig{{ID: "  real-model  ", Alias: "external-model"}}),
+			1: validationGroup([]protocol.Protocol{protocol.OpenAICompletions}, " \t", []state.ModelConfig{{ID: "  real-model  ", Aliases: []string{"external-model"}}}),
 		}),
 		[]state.CredentialRef{{ID: 7, GroupID: 1, EncryptedValue: "key-7"}},
 		probes,

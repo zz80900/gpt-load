@@ -40,7 +40,7 @@ func TestHandlerUsesPublishedRouteStrategyAndPreservesSelectedRoute(t *testing.T
 		input.Groups = append(input.Groups, state.GroupConfig{
 			ID: id, Name: string(target.channelID), ChannelID: target.channelID, ConnectionType: "api_key",
 			Params: json.RawMessage(`{}`), Enabled: true, WeightManual: &target.weight,
-			Models: []state.ModelConfig{{ID: target.model, Alias: "public"}},
+			Models: []state.ModelConfig{{ID: target.model, Aliases: []string{"public"}}},
 		})
 		credential := testCredentialConfig(id, id)
 		input.Credentials = append(input.Credentials, credential)

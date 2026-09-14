@@ -61,7 +61,7 @@ func TestRerankGatewayRoutesObservesAndProtectsAccess(t *testing.T) {
 			params, _ := json.Marshal(map[string]string{"base_url": server.URL + "/team"})
 			_, err = manager.Publish(state.CompileInput{
 				ChannelRegistry: channel.NewRegistry(),
-				Groups: []state.GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "rerank", ChannelID: channel.NewAPI, Params: params, Models: []state.ModelConfig{{ID: "provider-model", Alias: "public"}}, Enabled: true,
+				Groups: []state.GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "rerank", ChannelID: channel.NewAPI, Params: params, Models: []state.ModelConfig{{ID: "provider-model", Aliases: []string{"public"}}}, Enabled: true,
 					Settings: config.Settings{"parameter_overrides": []any{map[string]any{"match": map[string]any{"protocol": "rerank"}, "set": map[string]any{"top_n": 1}}}},
 				}},
 				Credentials: []state.CredentialConfig{testCredentialConfig(1, 1)},

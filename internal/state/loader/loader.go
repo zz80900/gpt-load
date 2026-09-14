@@ -78,8 +78,22 @@ type compileRows struct {
 }
 
 type modelDTO struct {
-	ID    string `json:"id"`
-	Alias string `json:"alias"`
+	ID      string   `json:"id"`
+	Aliases []string `json:"aliases"`
+	Alias   string   `json:"alias"` // 旧版单别名字段，仅用于读取兼容
+}
+
+// effectiveAliases 把旧版单别名字段折叠成别名列表。旧写入路径在 alias_enabled
+// 为 false 时会把 alias 清空，因此历史上 alias != "" 恒等价于「别名已启用」，
+// 可以直接前向迁移，无需再参考已不再落库的 alias_enabled。
+func (m modelDTO) effectiveAliases() []string {
+	if len(m.Aliases) > 0 {
+		return m.Aliases
+	}
+	if strings.TrimSpace(m.Alias) != "" {
+		return []string{m.Alias}
+	}
+	return nil
 }
 
 type filterDTO struct {
@@ -630,7 +644,7 @@ func mapSystemAndGroups(
 
 		runtimeModels := make([]state.ModelConfig, 0, len(storedModels))
 		for _, model := range storedModels {
-			runtimeModels = append(runtimeModels, state.ModelConfig{ID: model.ID, Alias: model.Alias})
+			runtimeModels = append(runtimeModels, state.ModelConfig{ID: model.ID, Aliases: model.effectiveAliases()})
 		}
 		multiplier, err := persistedPriceMultiplier(row.PriceMultiplierMicros)
 		if err != nil {

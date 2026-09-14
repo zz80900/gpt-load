@@ -681,11 +681,11 @@ func schedulerSnapshot() *state.ConfigSnapshot {
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []state.GroupConfig{
 			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models: []state.ModelConfig{{ID: "gpt-4o", Alias: "gpt-4o"}}, Enabled: true,
+				Models: []state.ModelConfig{{ID: "gpt-4o", Aliases: []string{"gpt-4o"}}}, Enabled: true,
 			},
 			{ConnectionType: "api_key", ID: 2, Name: "two", ChannelID: channel.OpenAICompatible,
 				Params: json.RawMessage(`{"base_url":"https://two.example/v1"}`),
-				Models: []state.ModelConfig{{ID: "provider-gpt-4o", Alias: "gpt-4o"}}, Enabled: true,
+				Models: []state.ModelConfig{{ID: "provider-gpt-4o", Aliases: []string{"gpt-4o"}}}, Enabled: true,
 			},
 		},
 	})

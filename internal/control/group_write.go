@@ -21,17 +21,26 @@ import (
 
 const maxCredentialLines = 5000
 
+// 单个模型允许配置的别名数量上限，以及单个对外名称的字节长度上限。
+// 名称长度与验证模型的 255 上限保持同一量级，避免超长字符串进入路由索引。
+const (
+	maxAliasesPerModel = 10
+	maxModelNameBytes  = 255
+)
+
 type GroupModel struct {
-	ID           string `json:"id"`
-	Alias        string `json:"alias"`
-	AliasEnabled bool   `json:"-"`
+	ID      string   `json:"id"`
+	Aliases []string `json:"aliases"`
+	// AliasEnabled 仅在请求解码期用于兼容旧客户端，不落库也不出现在响应里。
+	AliasEnabled bool `json:"-"`
 }
 
 func (model *GroupModel) UnmarshalJSON(data []byte) error {
 	var wire struct {
-		ID           string `json:"id"`
-		Alias        string `json:"alias"`
-		AliasEnabled bool   `json:"alias_enabled"`
+		ID           string   `json:"id"`
+		Aliases      []string `json:"aliases"`
+		Alias        string   `json:"alias"`
+		AliasEnabled bool     `json:"alias_enabled"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -46,7 +55,13 @@ func (model *GroupModel) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode group model trailing value: %w", err)
 	}
 	model.ID = wire.ID
-	model.Alias = wire.Alias
+	model.Aliases = wire.Aliases
+	// 旧格式只有单别名字段。历史上「别名非空」恒等价于「别名已启用」——旧写入
+	// 路径在开关关闭时会把别名字段清空，且存储侧的 JSON 根本不带 alias_enabled，
+	// 所以这里不能参考该开关，否则存量分组的别名会被整体丢掉。
+	if len(model.Aliases) == 0 && strings.TrimSpace(wire.Alias) != "" {
+		model.Aliases = []string{wire.Alias}
+	}
 	model.AliasEnabled = wire.AliasEnabled
 	return nil
 }
@@ -70,12 +85,6 @@ type credentialValidationData struct {
 type optionalGroupModels struct {
 	Set    bool
 	Values []GroupModel
-}
-
-type groupModelRequestWire struct {
-	ID           string `json:"id"`
-	Alias        string `json:"alias"`
-	AliasEnabled *bool  `json:"alias_enabled"`
 }
 
 type optionalField[T any] struct {
@@ -134,22 +143,15 @@ func (value *optionalGroupModels) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode models trailing value: %w", err)
 	}
 
+	// 严格解码语义（拒绝未知字段、拒绝尾随值、兼容旧单别名字段）由
+	// GroupModel.UnmarshalJSON 统一负责，这里不再重复一层 wire 结构。
 	decoded := make([]GroupModel, 0, len(encodedModels))
 	for _, encoded := range encodedModels {
-		modelDecoder := json.NewDecoder(bytes.NewReader(encoded))
-		modelDecoder.DisallowUnknownFields()
-		var wire groupModelRequestWire
-		if err := modelDecoder.Decode(&wire); err != nil {
+		var model GroupModel
+		if err := json.Unmarshal(encoded, &model); err != nil {
 			return fmt.Errorf("decode group model: %w", err)
 		}
-		if wire.AliasEnabled == nil {
-			return app_errors.ErrValidation
-		}
-		decoded = append(decoded, GroupModel{
-			ID:           wire.ID,
-			Alias:        wire.Alias,
-			AliasEnabled: *wire.AliasEnabled,
-		})
+		decoded = append(decoded, model)
 	}
 
 	value.Set = true
@@ -187,43 +189,75 @@ func normalizeUpstreamBaseURL(raw string) (normalized, hostname string, err erro
 	return parsed.String(), hostname, nil
 }
 
-func normalizeGroupModels(values []GroupModel) ([]GroupModel, error) {
-	result := make([]GroupModel, 0, len(values))
-	indexesByClientModel := make(map[string][]int, len(values))
-	clientModelOrder := make([]string, 0, len(values))
-	for index, value := range values {
-		normalized := GroupModel{
-			ID: strings.TrimSpace(value.ID),
+// normalizeModelAliases 规范单个模型的别名：逐项 trim，丢弃空项与等于模型 ID 的项，
+// 按首次出现去重（大小写敏感的精确比较），保持输入顺序，并施加数量与长度上限。
+func normalizeModelAliases(values []string, id string) ([]string, error) {
+	aliases := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		alias := strings.TrimSpace(value)
+		if alias == "" || alias == id {
+			continue
 		}
-		if normalized.ID == "" {
+		if len([]byte(alias)) > maxModelNameBytes {
 			return nil, app_errors.ErrValidation
 		}
-		alias := strings.TrimSpace(value.Alias)
-		aliasEnabled := value.AliasEnabled
-		if aliasEnabled {
-			if alias == "" {
-				return nil, app_errors.ErrValidation
+		if _, duplicate := seen[alias]; duplicate {
+			continue
+		}
+		if len(aliases) >= maxAliasesPerModel {
+			return nil, app_errors.ErrValidation
+		}
+		seen[alias] = struct{}{}
+		aliases = append(aliases, alias)
+	}
+	return aliases, nil
+}
+
+// normalizeGroupModels 规范化模型列表并检测对外名称冲突。一个对外名称（模型 ID 或
+// 任一别名）只能由一个模型条目认领：跨条目重名会让该名称解析到两个不同上游，
+// 路由结果将由候选排序而非配置决定，计费归因也会落到排序靠前的那一个，
+// 因此必须拒绝而不是静默取其一。
+func normalizeGroupModels(values []GroupModel) ([]GroupModel, error) {
+	result := make([]GroupModel, 0, len(values))
+	// name -> 认领它的条目 index。同一个上游 ID 只贡献一个 index：存量分组可能
+	// 用多条同 ID 记录表达「一个模型两个名」，那不是冲突。
+	indexesByName := make(map[string][]int, len(values))
+	ownersByName := make(map[string]map[string]struct{}, len(values))
+	nameOrder := make([]string, 0, len(values))
+	for index, value := range values {
+		id := strings.TrimSpace(value.ID)
+		if id == "" {
+			return nil, app_errors.ErrValidation
+		}
+		aliases, err := normalizeModelAliases(value.Aliases, id)
+		if err != nil {
+			return nil, err
+		}
+		normalized := GroupModel{ID: id, Aliases: aliases}
+		for _, name := range append([]string{id}, aliases...) {
+			owners, exists := ownersByName[name]
+			if !exists {
+				owners = make(map[string]struct{}, 1)
+				ownersByName[name] = owners
+				nameOrder = append(nameOrder, name)
 			}
-			normalized.Alias = alias
+			if _, claimed := owners[id]; claimed {
+				continue
+			}
+			owners[id] = struct{}{}
+			indexesByName[name] = append(indexesByName[name], index)
 		}
-		clientModel := normalized.ID
-		if normalized.Alias != "" {
-			clientModel = normalized.Alias
-		}
-		if _, exists := indexesByClientModel[clientModel]; !exists {
-			clientModelOrder = append(clientModelOrder, clientModel)
-		}
-		indexesByClientModel[clientModel] = append(indexesByClientModel[clientModel], index)
 		result = append(result, normalized)
 	}
 	conflicts := make([]ModelNameConflict, 0)
-	for _, clientModel := range clientModelOrder {
-		indexes := indexesByClientModel[clientModel]
+	for _, name := range nameOrder {
+		indexes := indexesByName[name]
 		if len(indexes) < 2 {
 			continue
 		}
 		conflicts = append(conflicts, ModelNameConflict{
-			ClientModel: clientModel,
+			ClientModel: name,
 			Indexes:     append([]int(nil), indexes...),
 		})
 	}

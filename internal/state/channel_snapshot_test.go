@@ -17,7 +17,7 @@ func TestCompileBuildsOperationAwareChannelCandidates(t *testing.T) {
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{{ConnectionType: "api_key", ID: 7, Name: "anthropic", ChannelID: channel.Anthropic,
 			Params:  json.RawMessage(`{}`),
-			Models:  []ModelConfig{{ID: "claude-upstream", Alias: "claude-public"}},
+			Models:  []ModelConfig{{ID: "claude-upstream", Aliases: []string{"claude-public"}}},
 			Enabled: true,
 		}},
 		Credentials: []CredentialConfig{{
@@ -71,8 +71,8 @@ func TestCompileSelectsNativeVertexGeminiModePerModel(t *testing.T) {
 		Groups: []GroupConfig{{ConnectionType: "api_key", ID: 9, Name: "vertex", ChannelID: channel.GoogleVertex,
 			Params: json.RawMessage(`{}`),
 			Models: []ModelConfig{
-				{ID: "gemini-2.5-pro", Alias: "gemini-public"},
-				{ID: "claude-sonnet-4", Alias: "claude-public"},
+				{ID: "gemini-2.5-pro", Aliases: []string{"gemini-public"}},
+				{ID: "claude-sonnet-4", Aliases: []string{"claude-public"}},
 			},
 			Enabled: true,
 		}},
@@ -132,8 +132,8 @@ func TestCompileIndexesAllNativeResponsesExtensions(t *testing.T) {
 	snapshot, err := Compile(CompileInput{
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{
-			{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "official-upstream", Alias: "public"}}, Enabled: true},
-			{ConnectionType: "api_key", ID: 2, ChannelID: channel.OpenAICompatible, Params: json.RawMessage(`{"base_url":"https://proxy.example/v1"}`), Models: []ModelConfig{{ID: "compatible-upstream", Alias: "public"}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "official-upstream", Aliases: []string{"public"}}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 2, ChannelID: channel.OpenAICompatible, Params: json.RawMessage(`{"base_url":"https://proxy.example/v1"}`), Models: []ModelConfig{{ID: "compatible-upstream", Aliases: []string{"public"}}}, Enabled: true},
 		},
 	})
 	if err != nil {
@@ -175,8 +175,8 @@ func TestCompileOrdersNativeTargetsBeforeConvertedTargets(t *testing.T) {
 	snapshot, err := Compile(CompileInput{
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{
-			{ConnectionType: "api_key", ID: 1, ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "converted", Alias: "public"}}, Enabled: true},
-			{ConnectionType: "api_key", ID: 2, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "native", Alias: "public"}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 1, ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "converted", Aliases: []string{"public"}}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 2, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "native", Aliases: []string{"public"}}}, Enabled: true},
 		},
 	})
 	if err != nil {
@@ -197,7 +197,7 @@ func TestCompileChannelSnapshotOwnsInputData(t *testing.T) {
 	input := CompileInput{
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAICompatible, Params: params,
-			Models:       []ModelConfig{{ID: "upstream", Alias: "public"}},
+			Models:       []ModelConfig{{ID: "upstream", Aliases: []string{"public"}}},
 			WeightManual: &weight, Enabled: true,
 		}},
 	}
@@ -207,14 +207,15 @@ func TestCompileChannelSnapshotOwnsInputData(t *testing.T) {
 	}
 
 	params[2] = 'X'
-	input.Groups[0].Models[0] = ModelConfig{ID: "changed", Alias: "changed"}
+	input.Groups[0].Models[0] = ModelConfig{ID: "changed", Aliases: []string{"changed"}}
 	weight = 99
 
 	view := snapshot.Groups[1]
 	if string(view.Params) != `{"base_url":"https://proxy.example/v1"}` {
 		t.Fatalf("GroupView.Params = %s", view.Params)
 	}
-	if len(view.Models) != 1 || view.Models[0].ID != "upstream" || view.Models[0].Alias != "public" {
+	if len(view.Models) != 1 || view.Models[0].ID != "upstream" ||
+		len(view.Models[0].Aliases) != 1 || view.Models[0].Aliases[0] != "public" {
 		t.Fatalf("GroupView.Models = %#v", view.Models)
 	}
 	if view.WeightManual == nil || *view.WeightManual != 12 {

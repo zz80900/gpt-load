@@ -26,15 +26,15 @@ func inspectSnapshot(t *testing.T) *state.ConfigSnapshot {
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []state.GroupConfig{
 			{ConnectionType: "api_key", ID: 2, Name: "disabled", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models:  []state.ModelConfig{{ID: "provider-disabled", Alias: "public"}},
+				Models:  []state.ModelConfig{{ID: "provider-disabled", Aliases: []string{"public"}}},
 				Enabled: false,
 			},
 			{ConnectionType: "api_key", ID: 1, Name: "active", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models:  []state.ModelConfig{{ID: "provider-active", Alias: "public"}},
+				Models:  []state.ModelConfig{{ID: "provider-active", Aliases: []string{"public"}}},
 				Enabled: true,
 			},
 			{ConnectionType: "api_key", ID: 3, Name: "weight-zero", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models:       []state.ModelConfig{{ID: "provider-zero", Alias: "public"}},
+				Models:       []state.ModelConfig{{ID: "provider-zero", Aliases: []string{"public"}}},
 				WeightManual: &zero, Enabled: true,
 			},
 		},
@@ -328,7 +328,7 @@ func TestInspectEligiblePoolMatchesIteratorWhenQuotaObservationsDiffer(t *testin
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []state.GroupConfig{{
 			ID: 7, Name: "codex", ChannelID: channel.Codex, ConnectionType: "subscription",
-			Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "gpt-5", Alias: "public"}},
+			Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "gpt-5", Aliases: []string{"public"}}},
 			Enabled: true,
 		}},
 	})
@@ -499,7 +499,7 @@ func TestInspectSummarizesStaticGroupExclusions(t *testing.T) {
 	group := func(id uint, enabled bool) state.GroupConfig {
 		return state.GroupConfig{ConnectionType: "api_key", ID: id, Name: fmt.Sprintf("group-%d", id),
 			ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-			Models:  []state.ModelConfig{{ID: fmt.Sprintf("provider-%d", id), Alias: "public"}},
+			Models:  []state.ModelConfig{{ID: fmt.Sprintf("provider-%d", id), Aliases: []string{"public"}}},
 			Enabled: enabled,
 		}
 	}

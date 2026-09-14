@@ -151,7 +151,9 @@ func TestReadHomeBaseUsesPersistedAndRuntimeSnapshots(t *testing.T) {
 			GroupCount:               3,
 			CredentialCount:          4,
 			AvailableCredentialCount: 1,
-			ModelCount:               4,
+			// 计数按上游模型去重：两个模型都配了 client-primary 这个对外名，
+			// 旧实现按对外名去重会算成 1 个，按模型算才是模型数。
+			ModelCount: 5,
 		},
 		AccessKeys: []HomeAccessKey{
 			{

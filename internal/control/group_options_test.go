@@ -37,11 +37,11 @@ func TestListGroupOptionsReturnsAllGroupsByIDWithExternalModels(t *testing.T) {
 	}
 	if len(options) != 2 || options[0].ID != 10 || options[0].Name != "earlier disabled" ||
 		options[0].ChannelID != channel.Anthropic || string(options[0].Params) != `{}` ||
-		options[0].Enabled || !reflect.DeepEqual(options[0].Models, []string{"upstream-third", "public-fourth"}) ||
+		options[0].Enabled || !reflect.DeepEqual(options[0].Models, []string{"upstream-third", "upstream-fourth", "public-fourth"}) ||
 		options[1].ID != 20 || options[1].Name != "later enabled" ||
 		options[1].ChannelID != channel.OpenAICompatible ||
 		string(options[1].Params) != `{"base_url":"https://later-enabled.example/v1"}` ||
-		!options[1].Enabled || !reflect.DeepEqual(options[1].Models, []string{"public-first", "upstream-second"}) {
+		!options[1].Enabled || !reflect.DeepEqual(options[1].Models, []string{"upstream-first", "public-first", "upstream-second"}) {
 		t.Fatalf("ListGroupOptions() = %#v, want terminal channel options", options)
 	}
 

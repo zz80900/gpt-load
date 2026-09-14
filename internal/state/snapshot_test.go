@@ -22,15 +22,15 @@ func TestCompileIndexesExternalModelsAndPreservesUpstreamIDs(t *testing.T) {
 		Groups: []GroupConfig{
 			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
 				Models: []ModelConfig{
-					{ID: "provider-a", Alias: "public"},
-					{ID: "provider-a", Alias: "secondary"},
+					{ID: "provider-a", Aliases: []string{"public"}},
+					{ID: "provider-a", Aliases: []string{"secondary"}},
 					{ID: "plain"},
 				},
 				Enabled: true,
 			},
 			{ConnectionType: "api_key", ID: 2, Name: "two", ChannelID: channel.OpenAICompatible,
 				Params:  json.RawMessage(`{"base_url":"https://proxy.example/v1"}`),
-				Models:  []ModelConfig{{ID: "provider-b", Alias: "public"}},
+				Models:  []ModelConfig{{ID: "provider-b", Aliases: []string{"public"}}},
 				Enabled: true,
 			},
 		},
@@ -51,8 +51,9 @@ func TestCompileIndexesExternalModelsAndPreservesUpstreamIDs(t *testing.T) {
 	if got := index["plain"]; len(got) != 1 || got[0].UpstreamModelID != "plain" {
 		t.Fatalf("plain targets = %#v", got)
 	}
-	if _, exists := index["provider-a"]; exists {
-		t.Fatal("aliased upstream id entered external index")
+	// 上游 ID 与别名并列注册：配了别名之后原 ID 仍然可路由。
+	if got := index["provider-a"]; len(got) != 1 || got[0].UpstreamModelID != "provider-a" {
+		t.Fatalf("upstream id targets = %#v", got)
 	}
 }
 
@@ -63,10 +64,10 @@ func TestCompileIndexesOpenAIImagesOperationsForAllConfiguredModels(t *testing.T
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{
 			{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models: []ModelConfig{{ID: "official-image", Alias: "public"}}, Enabled: true},
+				Models: []ModelConfig{{ID: "official-image", Aliases: []string{"public"}}}, Enabled: true},
 			{ConnectionType: "api_key", ID: 2, ChannelID: channel.OpenAICompatible,
 				Params: json.RawMessage(`{"base_url":"https://proxy.example/api/v4"}`),
-				Models: []ModelConfig{{ID: "compatible-image", Alias: "public"}}, Enabled: true},
+				Models: []ModelConfig{{ID: "compatible-image", Aliases: []string{"public"}}}, Enabled: true},
 		},
 	})
 	if err != nil {
@@ -88,12 +89,12 @@ func TestCompileIndexesOpenAIEmbeddingsForAllConfiguredModels(t *testing.T) {
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{
 			{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models: []ModelConfig{{ID: "text-embedding-3-small", Alias: "public"}}, Enabled: true},
+				Models: []ModelConfig{{ID: "text-embedding-3-small", Aliases: []string{"public"}}}, Enabled: true},
 			{ConnectionType: "api_key", ID: 2, ChannelID: channel.OpenAICompatible,
 				Params: json.RawMessage(`{"base_url":"https://proxy.example/api/v4"}`),
-				Models: []ModelConfig{{ID: "Qwen/Qwen3-Embedding-8B", Alias: "public"}}, Enabled: true},
+				Models: []ModelConfig{{ID: "Qwen/Qwen3-Embedding-8B", Aliases: []string{"public"}}}, Enabled: true},
 			{ConnectionType: "api_key", ID: 3, ChannelID: channel.OpenRouter, Params: json.RawMessage(`{}`),
-				Models: []ModelConfig{{ID: "openai/text-embedding-3-small", Alias: "public"}}, Enabled: true},
+				Models: []ModelConfig{{ID: "openai/text-embedding-3-small", Aliases: []string{"public"}}}, Enabled: true},
 		},
 	})
 	if err != nil {
@@ -117,7 +118,7 @@ func TestCompileSubscriptionPublishesOnlyVerifiedCodexOperations(t *testing.T) {
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{{
 			ID: 1, Name: "subscription", ChannelID: channel.Codex, ConnectionType: "subscription",
-			Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "gpt-5", Alias: "public"}}, Enabled: true,
+			Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "gpt-5", Aliases: []string{"public"}}}, Enabled: true,
 		}},
 	})
 	if err != nil {
@@ -161,10 +162,10 @@ func TestCompileBuildsManagementCatalogsWithoutChangingActiveIndexes(t *testing.
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{
 			{ConnectionType: "api_key", ID: 2, Name: "disabled", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models: []ModelConfig{{ID: "provider-disabled", Alias: "public"}}, WeightManual: &disabledWeight,
+				Models: []ModelConfig{{ID: "provider-disabled", Aliases: []string{"public"}}}, WeightManual: &disabledWeight,
 			},
 			{ConnectionType: "api_key", ID: 1, Name: "active", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-				Models: []ModelConfig{{ID: "provider-active", Alias: "public"}}, Enabled: true,
+				Models: []ModelConfig{{ID: "provider-active", Aliases: []string{"public"}}}, Enabled: true,
 			},
 		},
 		AccessKeys: []AccessKeyConfig{
@@ -207,7 +208,7 @@ func TestCompileCarriesSettingsAndValidationModel(t *testing.T) {
 		SystemSettings:  config.Settings{"first_byte_timeout": json.Number("20")},
 		Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
 			ValidationModel: "  probe-model  ",
-			Models:          []ModelConfig{{ID: "real-model", Alias: "public-model"}},
+			Models:          []ModelConfig{{ID: "real-model", Aliases: []string{"public-model"}}},
 			Settings:        config.Settings{"request_timeout": json.Number("30")}, Enabled: true,
 		}},
 	})
@@ -233,7 +234,7 @@ func TestCompileOwnsInputData(t *testing.T) {
 	input := CompileInput{
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
-			Models: []ModelConfig{{ID: "upstream", Alias: "public"}}, WeightManual: &weight, Enabled: true,
+			Models: []ModelConfig{{ID: "upstream", Aliases: []string{"public"}}}, WeightManual: &weight, Enabled: true,
 		}},
 		AccessKeys: []AccessKeyConfig{{
 			ID: 1, KeyHash: "hash", Status: AccessKeyStatusActive, Filters: filters,
@@ -260,7 +261,7 @@ func TestCompileOwnsInputData(t *testing.T) {
 	input.AccessKeys[0].CostLimitRules[0].LimitNanoUSD = 1
 
 	view := snapshot.Groups[1]
-	if !reflect.DeepEqual(view.Models, []ModelConfig{{ID: "upstream", Alias: "public"}}) || view.WeightManual == nil || *view.WeightManual != 25 {
+	if !reflect.DeepEqual(view.Models, []ModelConfig{{ID: "upstream", Aliases: []string{"public"}}}) || view.WeightManual == nil || *view.WeightManual != 25 {
 		t.Fatalf("group view changed with input = %#v", view)
 	}
 	gotFilters := snapshot.AccessKeysByID[1].Filters
@@ -295,7 +296,7 @@ func TestCompileRejectsInvalidCoreConfiguration(t *testing.T) {
 	}{
 		{
 			name:    "duplicate external model",
-			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "a"}, {ID: "b", Alias: "a"}}, Enabled: true}}},
+			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "a"}, {ID: "b", Aliases: []string{"a"}}}, Enabled: true}}},
 			wantErr: "duplicate external model",
 		},
 		{
