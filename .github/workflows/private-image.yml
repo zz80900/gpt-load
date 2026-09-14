@@ -11,10 +11,10 @@ on:
         required: false
         type: string
       push_latest:
-        description: '同时推送 latest 标签'
+        description: '同时推送 latest 标签（默认开启；仅发一次性版本时关闭）'
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
