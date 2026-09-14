@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
-import { ArrowRight, CircleHelp, Info, Layers, Magnet, Search, TriangleAlert } from '@lucide/vue'
+import {
+  ArrowRight,
+  CircleHelp,
+  CornerDownRight,
+  Layers,
+  Magnet,
+  Search,
+  TriangleAlert,
+} from '@lucide/vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -561,11 +569,11 @@ function responseTooltip(log: RequestLogItemDto): string {
   return [log.error_code, log.error_summary].filter(Boolean).join(' · ')
 }
 
-function modelMappingTooltip(log: RequestLogItemDto): string {
-  return t('monitor.logs.modelMapping', {
-    client: log.client_model ?? '—',
-    upstream: log.upstream_model ?? '—',
-  })
+/** 仅当上游模型与客户端模型不同（即发生映射）时返回上游模型名。 */
+function mappedUpstreamModel(log: RequestLogItemDto): string | undefined {
+  return log.upstream_model && log.upstream_model !== log.client_model
+    ? log.upstream_model
+    : undefined
 }
 
 function modelConsistencyTooltip(log: RequestLogItemDto): string {
@@ -810,18 +818,6 @@ function costLabel(log: RequestLogItemDto): string {
                 {{ reasoningLabel(log) }}
               </OverflowTooltip>
               <AppTooltip
-                v-if="log.upstream_model && log.upstream_model !== log.client_model"
-                :content="modelMappingTooltip(log)"
-              >
-                <button
-                  type="button"
-                  class="logs-list__hint"
-                  :aria-label="t('monitor.logs.modelMappingLabel')"
-                >
-                  <Info :size="13" aria-hidden="true" />
-                </button>
-              </AppTooltip>
-              <AppTooltip
                 v-if="log.model_consistency === 'unknown' || log.model_consistency === 'mismatch'"
                 :content="modelConsistencyTooltip(log)"
               >
@@ -840,6 +836,16 @@ function costLabel(log: RequestLogItemDto): string {
                 </button>
               </AppTooltip>
             </span>
+            <OverflowTooltip
+              v-if="mappedUpstreamModel(log)"
+              as="small"
+              class="logs-list__upstream-model"
+              :content="mappedUpstreamModel(log)"
+            >
+              <CornerDownRight :size="12" aria-hidden="true" />
+              <span class="sr-only">{{ t('monitor.logs.upstreamModelLabel') }}</span>
+              <span class="logs-list__upstream-value">{{ mappedUpstreamModel(log) }}</span>
+            </OverflowTooltip>
             <span class="logs-list__protocol-line">
               <OverflowTooltip as="small" :content="log.protocol">
                 {{ log.protocol }}
@@ -1142,6 +1148,26 @@ function costLabel(log: RequestLogItemDto): string {
 
 .logs-list__reasoning {
   flex: 0 0 auto;
+}
+
+.logs-list__cell .logs-list__upstream-model {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-warning);
+  font-family: var(--font-mono);
+}
+
+.logs-list__upstream-model > svg {
+  flex: 0 0 auto;
+}
+
+.logs-list__upstream-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .logs-list__inline > .logs-list__hint {

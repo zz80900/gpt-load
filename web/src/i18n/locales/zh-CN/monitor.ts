@@ -942,8 +942,7 @@ export default {
         streamError: '流错误',
         errorWithCode: '错误 {code}',
       },
-      modelMapping: '客户端模型：{client}\n上游模型：{upstream}',
-      modelMappingLabel: '查看模型映射',
+      upstreamModelLabel: '上游模型',
       modelConsistency: {
         notObserved: '未观察到',
         unknownLabel: '未观察到上游返回模型',
