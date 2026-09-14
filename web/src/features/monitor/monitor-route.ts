@@ -48,7 +48,7 @@ const logCursorPattern = /^[A-Za-z0-9_-]{1,512}$/u
 export function normalizeMonitorTab(raw: unknown): MonitorTab {
   return raw === 'logs' || raw === 'inspector' || raw === 'usage' || raw === 'health'
     ? raw
-    : 'health'
+    : 'logs'
 }
 
 export function normalizeMonitorQuery(query: Record<string, unknown>): LocationQueryRaw {
