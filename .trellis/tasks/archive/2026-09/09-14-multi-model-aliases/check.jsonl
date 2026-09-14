@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验收时需核对：前后端对「名称唯一性」的判定规则是否一致（服务端 reject 的配置不能让前端判为合法并反复重试保存）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端质量规范（当前为空模板，作为检查项占位）"}
+{"file": ".trellis/tasks/09-14-multi-model-aliases/prd.md", "reason": "验收标准 AC1–AC9，逐条核对；特别关注 C1（存量同 ID 多条目必须可编译）与 C3（无兼容窗口）"}
+{"file": ".trellis/tasks/09-14-multi-model-aliases/implement.md", "reason": "测试更新清单与端到端验证步骤"}
