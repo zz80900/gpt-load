@@ -34,7 +34,7 @@ const props = withDefaults(
     failureRateLabel?: string
   }>(),
   {
-    locale: 'en-US',
+    locale: 'zh-CN',
     centerBuckets: false,
     showBucketRange: false,
     showBucketSeconds: false,
