@@ -153,15 +153,34 @@ export function clientModels(model: GroupModelUpdateDto): string[] {
 export function findModelNameConflicts(
   models: readonly GroupModelUpdateDto[],
 ): ModelNameConflict[] {
-  const indexesByName = new Map<string, number[]>()
+  // 名称 -> 认领它的上游 ID -> 该上游首次出现的条目下标。同一个上游的多条记录
+  // （存量写法）可以共用名字；只有跨上游认领同名才是冲突——那会让该名称解析到
+  // 两个不同上游，路由结果由候选排序而非配置决定。
+  const ownersByName = new Map<string, Map<string, number>>()
+  const nameOrder: string[] = []
   for (const [index, model] of models.entries()) {
-    for (const name of clientModels(model)) {
-      indexesByName.set(name, [...(indexesByName.get(name) ?? []), index])
+    const normalized = normalizeModel(model)
+    if (normalized === undefined) continue
+    for (const name of [normalized.id, ...normalized.aliases]) {
+      let owners = ownersByName.get(name)
+      if (owners === undefined) {
+        owners = new Map<string, number>()
+        ownersByName.set(name, owners)
+        nameOrder.push(name)
+      }
+      if (!owners.has(normalized.id)) owners.set(normalized.id, index)
     }
   }
-  return [...indexesByName.entries()]
-    .filter(([, indexes]) => indexes.length > 1)
-    .map(([client_model, indexes]) => ({ client_model, indexes }))
+  const conflicts: ModelNameConflict[] = []
+  for (const name of nameOrder) {
+    const owners = ownersByName.get(name)
+    if (owners === undefined || owners.size < 2) continue
+    conflicts.push({
+      client_model: name,
+      indexes: [...owners.values()].sort((left, right) => left - right),
+    })
+  }
+  return conflicts
 }
 
 export function indexesWithConflicts(conflicts: readonly ModelNameConflict[]): Set<number> {

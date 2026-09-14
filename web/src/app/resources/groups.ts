@@ -466,12 +466,25 @@ export function projectGroupModels(value: unknown): GroupModelsDto {
   const items = projectArray(record.items, projectGroupModelItem)
   const total = projectSafeInteger(record.total, { minimum: 0 })
   const pending = projectSafeInteger(record.pending, { minimum: 0 })
+  // 一个对外名称只能由一个上游模型认领，但**同一个上游**的多条记录（单别名时代
+  // 用户借它表达「一个模型多个名」的存量写法）会重复贡献同一个名字，那是合法的。
+  // 因此按「名称 -> 认领它的上游 ID」判定，不能按名称出现次数去重计数。
+  const claims = new Map<string, string>()
+  let conflict = false
+  for (const item of items) {
+    for (const name of item.client_models) {
+      const owner = claims.get(name)
+      if (owner === undefined) {
+        claims.set(name, item.id)
+      } else if (owner !== item.id) {
+        conflict = true
+      }
+    }
+  }
   if (
     items.length !== total ||
     pending > total ||
-    // 一个对外名称（ID 或别名）只能属于一个上游模型，因此所有名称合起来不得重复。
-    new Set(items.flatMap(({ client_models }) => client_models)).size !==
-      items.reduce((count, item) => count + item.client_models.length, 0) ||
+    conflict ||
     items.filter(({ pricing_status }) => pricing_status === 'pending').length !== pending
   ) {
     throw new InvalidResponseError()
