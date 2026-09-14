@@ -1,3 +1,6 @@
+// 本应用只提供中文界面：locales/ 下的 en-US 与 ja-JP 保留在仓库中但不被加载。
+// 保留的意义是让 git 能正常跟踪上游对这些文件的改动，避免每次合并上游都产生
+// delete/modify 冲突；因为下方 loader 只注册 zh-CN，它们也不会进入构建产物。
 import { createI18n } from 'vue-i18n'
 
 export const appLocale = 'zh-CN' as const
