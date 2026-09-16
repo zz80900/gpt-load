@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"gpt-load/internal/modelname"
 	"gpt-load/internal/protocol"
 	"gpt-load/internal/state"
 )
@@ -97,7 +98,9 @@ func collectVisibleModelIDs(
 					continue
 				}
 				if len(accessKey.Filters.Models) > 0 {
-					if _, ok := accessKey.Filters.Models[modelID]; !ok {
+					// 与调度侧同一口径：白名单可能只勾了带后缀的别名，而客户端
+					// 请求与实际发出的名称可能是剥掉后缀的基名。
+					if !modelname.Allows(accessKey.Filters.Models, modelID) {
 						continue
 					}
 				}

@@ -16,6 +16,7 @@ import (
 	"gpt-load/internal/channel"
 	"gpt-load/internal/platform/epochms"
 	app_errors "gpt-load/internal/platform/errors"
+	"gpt-load/internal/state"
 	"gpt-load/internal/storage/models"
 )
 
@@ -218,6 +219,10 @@ func normalizeModelAliases(values []string, id string) ([]string, error) {
 // 任一别名）只能由一个模型条目认领：跨条目重名会让该名称解析到两个不同上游，
 // 路由结果将由候选排序而非配置决定，计费归因也会落到排序靠前的那一个，
 // 因此必须拒绝而不是静默取其一。
+//
+// 认领集合与路由索引、编译期校验同口径（state.RoutableModelNames）：带后缀别名
+// xxxx[1M] 会额外认领基名 xxxx，基名被别的条目占用时必须在保存阶段就报冲突，
+// 否则用户会看到「保存成功、新配置不生效」。
 func normalizeGroupModels(values []GroupModel) ([]GroupModel, error) {
 	result := make([]GroupModel, 0, len(values))
 	// name -> 认领它的条目 index。同一个上游 ID 只贡献一个 index：存量分组可能
@@ -235,7 +240,7 @@ func normalizeGroupModels(values []GroupModel) ([]GroupModel, error) {
 			return nil, err
 		}
 		normalized := GroupModel{ID: id, Aliases: aliases}
-		for _, name := range append([]string{id}, aliases...) {
+		for _, name := range state.RoutableModelNames(state.ModelConfig{ID: id, Aliases: aliases}) {
 			owners, exists := ownersByName[name]
 			if !exists {
 				owners = make(map[string]struct{}, 1)

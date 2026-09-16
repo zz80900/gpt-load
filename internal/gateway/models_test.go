@@ -67,6 +67,53 @@ func TestVisibleModelIDs(t *testing.T) {
 	}
 }
 
+func TestVisibleModelIDsNormalizesContextSuffixFilter(t *testing.T) {
+	t.Parallel()
+	snapshot, err := state.Compile(state.CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []state.GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "first", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
+				Models: []state.ModelConfig{
+					{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1M]"}},
+					{ID: "other"},
+				},
+				Enabled: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		accessKey state.AccessKeyView
+		want      []string
+	}{
+		// 白名单只勾带后缀别名时，请求名（剥掉后缀）也可见；上游 ID 仍被隐藏。
+		{name: "suffixed whitelist exposes the base name",
+			accessKey: state.AccessKeyView{Filters: state.FilterSet{Models: map[string]struct{}{"claude-deepseek-flash[1M]": {}}}},
+			want:      []string{"claude-deepseek-flash", "claude-deepseek-flash[1M]"}},
+		{name: "base whitelist keeps the suffixed name",
+			accessKey: state.AccessKeyView{Filters: state.FilterSet{Models: map[string]struct{}{"claude-deepseek-flash": {}}}},
+			want:      []string{"claude-deepseek-flash", "claude-deepseek-flash[1M]"}},
+		{name: "no filter lists every routed name",
+			want: []string{"claude-deepseek-flash", "claude-deepseek-flash[1M]", "deepseek-flash", "other"}},
+		{name: "unrelated whitelist hides them",
+			accessKey: state.AccessKeyView{Filters: state.FilterSet{Models: map[string]struct{}{"other": {}}}},
+			want:      []string{"other"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := visibleModelIDs(snapshot, test.accessKey, protocol.OpenAICompletions)
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("visibleModelIDs() = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestVisibleOpenAIModelIDsUnionsChatAndResponses(t *testing.T) {
 	t.Parallel()
 

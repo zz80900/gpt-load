@@ -14,6 +14,7 @@ import (
 	"gpt-load/internal/channel"
 	"gpt-load/internal/connection"
 	"gpt-load/internal/execution"
+	"gpt-load/internal/modelname"
 	"gpt-load/internal/outboundproxy"
 	"gpt-load/internal/parameteroverride"
 	"gpt-load/internal/platform/config"
@@ -84,6 +85,83 @@ func ExternalModelNames(model ModelConfig) []string {
 			continue
 		}
 		names = append(names, trimmed)
+	}
+	return names
+}
+
+// RoutableModelNames 返回模型在路由索引里认领的全部名称：ExternalModelNames 的
+// 每一项，其后紧跟该项剥掉上下文后缀的基名。
+//
+// 与 ExternalModelNames 的分工：后者是「配置里写过、对客户端可见」的名称集合，
+// 其形状被前端 client_models 断言锁死，不能含派生名；本函数额外展开后缀基名，
+// 供路由索引、模型页、写路径与编译期冲突检测使用——这些消费点要的是「哪些名称
+// 可路由」，而不是「配置里写过哪些名称」。客户端（Claude Code 一类）用带后缀名
+// 判断大上下文、用基名发起请求，因此带后缀别名必须同时以基名路由。
+//
+// 派生名紧跟来源项（[id, id基名, 别名1, 别名1基名, ...]），使模型页成对展示；
+// 无后缀的项不产生派生名，因此无后缀配置下本函数与 ExternalModelNames 逐项相等。
+// 重复项只保留首次出现：id=xxxx 且别名=xxxx[1M] 时，派生基名与 id 同名，只注册一次。
+func RoutableModelNames(model ModelConfig) []string {
+	names := ExternalModelNames(model)
+	routable := make([]string, 0, 2*len(names))
+	claimed := make(map[string]struct{}, 2*len(names))
+	for _, name := range names {
+		if _, duplicate := claimed[name]; !duplicate {
+			claimed[name] = struct{}{}
+			routable = append(routable, name)
+		}
+		base := modelname.Base(name)
+		if base == name {
+			continue
+		}
+		if _, duplicate := claimed[base]; duplicate {
+			continue
+		}
+		claimed[base] = struct{}{}
+		routable = append(routable, base)
+	}
+	return routable
+}
+
+// modelNameConflictError 生成跨条目重名错误。冲突名可能根本没在用户的配置文本里
+// 出现过——它是别名剥掉 [1M]/[1m] 后缀派生出来的等价名。只报名字，用户按名字在
+// 配置里找不到重复项，无法定位冲突，因此派生重名要连来源与占用者一起说明。
+func modelNameConflictError(models []ModelConfig, groupID uint, name, id, ownerID string, external []string) error {
+	if !slices.Contains(external, name) {
+		return fmt.Errorf(
+			"group %d has duplicate routed model %q: model %q derives it from %q by stripping the context suffix, but model %q already claims it",
+			groupID, name, id, derivedNameSource(external, name), ownerID,
+		)
+	}
+	if source := derivedNameSource(modelExternalNames(models, ownerID), name); source != "" {
+		return fmt.Errorf(
+			"group %d has duplicate external model %q: model %q already claims it by stripping the context suffix from %q",
+			groupID, name, ownerID, source,
+		)
+	}
+	return fmt.Errorf("group %d has duplicate external model %q", groupID, name)
+}
+
+// derivedNameSource 返回 names 中剥掉上下文后缀后等于 name 的那一项；空串表示 name
+// 本身就是显式名称，而不是后缀派生出来的。
+func derivedNameSource(names []string, name string) string {
+	for _, candidate := range names {
+		if candidate != name && modelname.Base(candidate) == name {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// modelExternalNames 汇总 models 里归属 ownerID 的全部条目的对外名称。claimed 只
+// 记录认领者 ID，报错时要把名称还原到具体配置项上只能回查；该查找只发生在重名
+// 报错路径，线性扫描足够。
+func modelExternalNames(models []ModelConfig, ownerID string) []string {
+	names := make([]string, 0, 2)
+	for _, model := range models {
+		if strings.TrimSpace(model.ID) == ownerID {
+			names = append(names, ExternalModelNames(model)...)
+		}
 	}
 	return names
 }
@@ -372,11 +450,13 @@ func appendExecutionTargets(
 	// 同一上游模型的多个配置条目（单别名时代的存量写法）会为同一个名字重复认领，
 	// 这里按名称去重：否则同一 (名称 → 上游) 会在索引里出现两次，放大该目标的候选
 	// 权重，并让失败重试反复落到同一个 target。
+	// 名称集合用 RoutableModelNames 而非 ExternalModelNames：带上下文后缀的别名
+	// 要连同基名一起注册，基名才可能出现在 /v1/models 里并被请求命中。
 	registrations := make([]modelRegistration, 0, len(group.Models))
 	claimed := make(map[string]struct{}, len(group.Models))
 	for _, model := range group.Models {
 		upstreamID := strings.TrimSpace(model.ID)
-		for _, name := range ExternalModelNames(model) {
+		for _, name := range RoutableModelNames(model) {
 			if _, duplicate := claimed[name]; duplicate {
 				continue
 			}
@@ -517,16 +597,18 @@ func validateCompileInput(input CompileInput) error {
 		// 名称 → 认领它的上游模型 ID。同一 ID 的多个条目（单别名时代用户借它
 		// 表达「一个模型两个名」的存量写法）允许重复认领同一个名字；只有跨 ID
 		// 认领同名才构成冲突——那会让该名称解析到两个不同上游，路由结果将由
-		// 候选排序而非配置决定。
+		// 候选排序而非配置决定。名称集合必须与索引注册同口径（RoutableModelNames），
+		// 否则会出现「编译通过但索引里两个上游抢一个名字」或反向的不一致。
 		claimed := make(map[string]string, len(group.Models))
 		for _, model := range group.Models {
 			id := strings.TrimSpace(model.ID)
 			if id == "" {
 				return fmt.Errorf("group %d model id is required", group.ID)
 			}
-			for _, name := range ExternalModelNames(model) {
-				if owner, exists := claimed[name]; exists && owner != id {
-					return fmt.Errorf("group %d has duplicate external model %q", group.ID, name)
+			external := ExternalModelNames(model)
+			for _, name := range RoutableModelNames(model) {
+				if ownerID, exists := claimed[name]; exists && ownerID != id {
+					return modelNameConflictError(group.Models, group.ID, name, id, ownerID, external)
 				}
 				claimed[name] = id
 			}

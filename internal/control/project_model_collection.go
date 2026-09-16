@@ -252,9 +252,11 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 			if !exists {
 				return ProjectModelListResponse{}, fmt.Errorf("missing model price row for %s: %w", identity.ModelID, app_errors.ErrInternalServer)
 			}
-			// 每个对外名称（ID 或别名）都是客户端可用的模型名，各自建一条记录；
-			// 一个模型配 N 个别名，就会在模型页出现 N+1 条，与 /v1/models 的可见集合一致。
-			names := state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
+			// 每个可路由名称（ID、别名，以及带上下文后缀别名的基名）都是客户端可用
+			// 的模型名，各自建一条记录；一个模型配 N 个别名，就会在模型页出现 N+1
+			// 条（后缀别名再多一条基名），与 /v1/models 遍历路由索引得到的可见集合
+			// 一致。这里必须用 RoutableModelNames，否则模型页与 /v1/models 对不上。
+			names := state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 			for _, clientModel := range names {
 				root := records[clientModel]
 				if root == nil {
@@ -490,7 +492,8 @@ func (s *Service) GetUpstreamModelDetail(ctx context.Context, priceID uint) (Ups
 			if model.ID != row.ModelID {
 				continue
 			}
-			for _, clientModel := range state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
+			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名。
+			for _, clientModel := range state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
 				key := fmt.Sprintf("%d\x00%s", group.row.ID, clientModel)
 				if _, duplicate := seenAssociations[key]; duplicate {
 					continue

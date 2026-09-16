@@ -8,6 +8,7 @@ import (
 
 	"gpt-load/internal/channel"
 	"gpt-load/internal/execution"
+	"gpt-load/internal/modelname"
 	"gpt-load/internal/protocol"
 	"gpt-load/internal/state"
 )
@@ -114,7 +115,9 @@ func evaluateTargets(
 		if query.externalModel == nil {
 			return []targetDecision{}, ReasonModelRequiredByFilter, nil
 		}
-		if _, allowed := query.accessKey.Filters.Models[*query.externalModel]; !allowed {
+		// 白名单按上下文后缀归一比较：白名单里存的只可能是配置里的名称（可能是
+		// 带后缀别名），而客户端会剥掉后缀发请求，两侧都要能互相命中。
+		if !modelname.Allows(query.accessKey.Filters.Models, *query.externalModel) {
 			return []targetDecision{}, ReasonModelFiltered, nil
 		}
 	}

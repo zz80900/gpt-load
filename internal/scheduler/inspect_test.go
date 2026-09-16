@@ -133,6 +133,77 @@ func TestInspectRequiresModelWhenAccessKeyHasModelFilter(t *testing.T) {
 	}
 }
 
+func TestInspectNormalizesContextSuffixInModelFilter(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := state.Compile(state.CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []state.GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "active", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
+				Models:  []state.ModelConfig{{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1M]"}}},
+				Enabled: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	tests := []struct {
+		name     string
+		models   map[string]struct{}
+		model    string
+		filtered bool
+	}{
+		{
+			// 白名单里存的只可能是配置里的名称；客户端会剥掉后缀发请求。
+			name:   "suffixed whitelist allows the base name",
+			models: map[string]struct{}{"claude-deepseek-flash[1M]": {}}, model: "claude-deepseek-flash",
+		},
+		{
+			name:   "suffixed whitelist allows the suffixed name",
+			models: map[string]struct{}{"claude-deepseek-flash[1M]": {}}, model: "claude-deepseek-flash[1M]",
+		},
+		{
+			name:   "base whitelist allows the suffixed name",
+			models: map[string]struct{}{"claude-deepseek-flash": {}}, model: "claude-deepseek-flash[1M]",
+		},
+		{
+			name:   "unrelated whitelist still filters",
+			models: map[string]struct{}{"other": {}}, model: "claude-deepseek-flash", filtered: true,
+		},
+		{
+			name:   "sibling suffix does not widen the whitelist",
+			models: map[string]struct{}{"claude-deepseek-flash[2M]": {}}, model: "claude-deepseek-flash", filtered: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := Inspect(snapshot, nil, Query{
+				ClientProtocol: protocol.OpenAICompletions, Operation: execution.OperationChatCompletion,
+				ExternalModel: modelPointer(test.model),
+				AccessKey: state.AccessKeyView{
+					Status:  state.AccessKeyStatusActive,
+					Filters: state.FilterSet{Models: test.models},
+				},
+			}, inspectNow())
+			if err != nil {
+				t.Fatalf("Inspect() error = %v", err)
+			}
+			if test.filtered {
+				if got.Reason != ReasonModelFiltered || len(got.Groups) != 0 {
+					t.Fatalf("Inspection = %#v, want reason %q", got, ReasonModelFiltered)
+				}
+				return
+			}
+			// 放行后进入凭据筛选：本用例不带凭据，因此停在「无可用凭据」而不是被拒。
+			if len(got.Groups) != 1 || !got.Groups[0].Included || got.Groups[0].Reason != ReasonNoCredentials {
+				t.Fatalf("Inspection = %#v, want the model to pass the filter", got)
+			}
+		})
+	}
+}
+
 func TestInspectExplainsGroupsAndKeysInStableOrder(t *testing.T) {
 	now := inspectNow()
 	snapshot := inspectSnapshot(t)

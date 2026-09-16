@@ -848,6 +848,55 @@ func TestForwarderRewritesAliasedNonStreamingResponses(t *testing.T) {
 	}
 }
 
+// 验收：别名带 [1M] 后缀时，客户端剥掉后缀改用基名发起请求同样能路由到同一上游
+// （此前索引里只有带后缀名，基名会落到 503 no_available_candidate）。上游收到的是
+// 配置里的上游 ID，响应里的模型名回写为客户端实际请求的名称。
+func TestAnthropicGatewayRoutesContextSuffixAliasBaseName(t *testing.T) {
+	receivedBodies := make([]string, 0, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		receivedBodies = append(receivedBodies, string(body))
+		response := `{"type":"message","model":"provider-response"}`
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Length", strconv.Itoa(len(response)))
+		setRepresentationMetadata(writer.Header())
+		_, _ = writer.Write([]byte(response))
+	}))
+	defer upstream.Close()
+
+	engine, _ := newDialectGatewayEngine(t, protocol.Anthropic, "claude-deepseek-flash",
+		dialect.NewSet(dialect.NewAnthropic()),
+		dialectGatewayGroup{
+			id: 1, name: "anthropic", upstreamURL: upstream.URL, apiKeys: []string{"provider-key"},
+			models: []state.ModelConfig{{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1M]"}}},
+		},
+	)
+
+	for _, model := range []string{"claude-deepseek-flash", "claude-deepseek-flash[1M]"} {
+		request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"`+model+`"}`))
+		request.Header.Set("Authorization", "Bearer gl-client")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("model %q response = %d headers=%v body=%s", model, recorder.Code, recorder.Header(), recorder.Body.String())
+		}
+		var downstream struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &downstream); err != nil || downstream.Model != model {
+			t.Fatalf("model %q downstream model = %q, %v; body=%s", model, downstream.Model, err, recorder.Body.String())
+		}
+	}
+	if len(receivedBodies) != 2 {
+		t.Fatalf("upstream requests = %d", len(receivedBodies))
+	}
+	for _, body := range receivedBodies {
+		if !strings.Contains(body, `"model":"deepseek-flash"`) {
+			t.Fatalf("upstream body = %s, want the configured upstream ID", body)
+		}
+	}
+}
+
 func TestTransparentModelRoutePreservesWire(t *testing.T) {
 	rawResponse := []byte("{\n  \"model\" : \"same-model\", \"n\": 9007199254740993\n}\n")
 	var receivedHeader http.Header

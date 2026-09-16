@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"gpt-load/internal/execution"
+	"gpt-load/internal/modelname"
 	"gpt-load/internal/protocol"
 )
 
@@ -330,10 +331,14 @@ func (entry rule) matches(clientProtocol protocol.Protocol, clientModel string) 
 	if entry.model == "" {
 		return true
 	}
+	// 两侧都按上下文后缀归一：规则里写的是配置里的名称（可能是带后缀别名），而
+	// 客户端会剥掉后缀发请求。无后缀时 Base 是恒等函数，既有行为逐字不变。
+	model := modelname.Base(entry.model)
+	clientModel = modelname.Base(clientModel)
 	if entry.modelPrefix {
-		return strings.HasPrefix(clientModel, entry.model)
+		return strings.HasPrefix(clientModel, model)
 	}
-	return clientModel == entry.model
+	return clientModel == model
 }
 
 func parsePointer(value string) ([]string, error) {

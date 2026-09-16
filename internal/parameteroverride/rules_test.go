@@ -100,6 +100,49 @@ func TestRulesMatchClientProtocolAndClientModel(t *testing.T) {
 	}
 }
 
+// 规则里的模型名来自配置（可能是带后缀别名），客户端发起请求时会剥掉后缀，
+// 两侧必须互相命中，否则为 xxxx[1M] 配的规则对请求 xxxx 静默失效。
+func TestRulesMatchNormalizesContextSuffixInClientModel(t *testing.T) {
+	rules := compileRulesForTest(t, []any{
+		map[string]any{
+			"match": map[string]any{"model": "claude-deepseek-flash[1M]"},
+			"set":   map[string]any{"max_tokens": json.Number("4096")},
+		},
+		map[string]any{
+			"match": map[string]any{"model": "claude-qwen-flash"},
+			"set":   map[string]any{"temperature": json.Number("0.5")},
+		},
+	})
+
+	for _, test := range []struct {
+		name    string
+		model   string
+		applied bool
+	}{
+		{name: "suffixed rule matches the base request", model: "claude-deepseek-flash", applied: true},
+		{name: "suffixed rule matches the suffixed request", model: "claude-deepseek-flash[1M]", applied: true},
+		{name: "suffixed rule matches the lower suffixed request", model: "claude-deepseek-flash[1m]", applied: true},
+		{name: "base rule matches the suffixed request", model: "claude-qwen-flash[1M]", applied: true},
+		{name: "unrelated model stays unmatched", model: "claude-other"},
+		{name: "sibling suffix stays unmatched", model: "claude-deepseek-flash[2M]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, applied, err := rules.Apply(
+				protocol.Anthropic,
+				execution.OperationChatCompletion,
+				test.model,
+				[]byte(`{"model":"claude-deepseek-flash"}`),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if applied != test.applied {
+				t.Fatalf("Apply(%q) applied = %t, want %t", test.model, applied, test.applied)
+			}
+		})
+	}
+}
+
 func TestCompileRejectsInvalidRules(t *testing.T) {
 	tests := []struct {
 		name  string

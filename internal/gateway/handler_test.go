@@ -1670,7 +1670,7 @@ func TestHandlerEnforcesModelUTF8ByteLimitBeforeAttempt(t *testing.T) {
 				ChannelRegistry: channel.NewRegistry(),
 				Groups: []state.GroupConfig{{ConnectionType: "api_key", ID: 1, Name: "openai", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
 					Models: []state.ModelConfig{{
-						ID:    "gpt-4o",
+						ID:      "gpt-4o",
 						Aliases: []string{test.model},
 					}},
 					Enabled: true,
@@ -1824,6 +1824,45 @@ func TestHandlerModelEndpointsApplyFiltersAndKeepEmptyShape(t *testing.T) {
 		assertJSONEqual(t, recorder.Body.String(), `{"object":"list","data":[]}`)
 		assertDebugHeaders(t, recorder.Header(), "", "0")
 	})
+}
+
+// 白名单只勾带后缀别名时，剥掉后缀的基名既要被放行也要出现在 /v1/models 里：
+// 这是客户端「用带后缀名识别 1M 上下文、用基名发起请求」的完整链路。
+func TestHandlerModelListExposesContextSuffixAliasBase(t *testing.T) {
+	keyService := encryptiontest.Service(t, "model-handler-test-master-key")
+	manager := state.NewManager()
+	if _, err := manager.Publish(state.CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []state.GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "openai", ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
+				Models:  []state.ModelConfig{{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1M]"}}},
+				Enabled: true,
+			},
+		},
+		AccessKeys: []state.AccessKeyConfig{{
+			ID: 1, Name: "client", KeyHash: keyService.Hash("gl-client"),
+			Status:  state.AccessKeyStatusActive,
+			Filters: state.FilterSet{Models: map[string]struct{}{"claude-deepseek-flash[1M]": {}}},
+		}},
+	}); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	handler := NewHandler(
+		manager, state.NewCredentialRegistry(), keyService, &scriptedForwarder{}, dialect.NewSet(), health.NewStatsStore(),
+		health.NewMutationCoordinator(),
+		nil, nil, nil,
+	)
+	engine := gin.New()
+	bindGatewayRoutesForTest(t, engine, handler)
+	request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	request.Header.Set("Authorization", "Bearer gl-client")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+	// 上游 ID deepseek-flash 未被勾选，因此不可见；基名与带后缀名都在。
+	assertJSONEqual(t, recorder.Body.String(), `{"object":"list","data":[`+
+		`{"id":"claude-deepseek-flash","object":"model","created":1735689600,"owned_by":"gpt-load"},`+
+		`{"id":"claude-deepseek-flash[1M]","object":"model","created":1735689600,"owned_by":"gpt-load"}]}`)
+	assertDebugHeaders(t, recorder.Header(), "", "0")
 }
 
 func TestHandlerModelEndpointsRequireValidAccessKey(t *testing.T) {

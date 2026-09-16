@@ -119,17 +119,23 @@ func (s *Service) UpdateGroupModels(
 		if err != nil {
 			return err
 		}
-		if err := validateGroupRowCandidate(ctx, tx, group, s.channelRegistry); err != nil {
-			return fmt.Errorf("validate existing group %d: %w", groupID, app_errors.ErrInternalServer)
-		}
 		var previous []GroupModel
 		if err := decodeGroupDiscoveryJSON(group.Models, &previous); err != nil {
 			return fmt.Errorf("decode group %d models: %w", groupID, app_errors.ErrInternalServer)
 		}
 		modelIDsChanged = !sameGroupModelIDs(previous, normalized)
 
+		// 存量行可能因升级前写入的派生名冲突而编译失败（读路径放过、只有写路径严格）。
+		// 这类行只能靠用户删掉冲突别名来修复，预检直接拒绝会把修复路径堵死，因此预检
+		// 失败不再立刻返回：接着校验即将写入的结果行，结果行能编译就说明本次保存正是
+		// 修复动作。两者都编译不过说明存量行另有损坏，仍按原口径报内部错误，不把责任
+		// 推给本次提交的新值。
+		storedErr := validateGroupRowCandidate(ctx, tx, group, s.channelRegistry)
 		group.Models = models.JSON(encoded)
 		if err := validateGroupRowCandidate(ctx, tx, group, s.channelRegistry); err != nil {
+			if storedErr != nil {
+				return fmt.Errorf("validate existing group %d: %w", groupID, app_errors.ErrInternalServer)
+			}
 			return app_errors.ErrValidation
 		}
 		if err := tx.Model(&models.Group{}).

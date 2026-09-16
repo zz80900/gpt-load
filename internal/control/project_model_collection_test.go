@@ -100,6 +100,61 @@ func TestProjectModelsSeparateSameUpstreamModelByChannelAndDetail(t *testing.T) 
 	}
 }
 
+// 带上下文后缀的别名会额外派生基名，而模型页声明「与 /v1/models 的可见集合一致」，
+// 因此基名必须在模型页与上游模型详情里都各自成条，且指向同一上游与同一价格身份。
+func TestProjectModelsExposeContextSuffixAliasBase(t *testing.T) {
+	t.Parallel()
+	fixture := newServiceFixture(t)
+	createPriceTestGroup(t, fixture.db, models.Group{
+		Name: "suffix", ChannelID: string(channel.OpenAICompatible), Params: models.JSON(`{"base_url":"https://suffix.example/v1"}`),
+		Models: models.JSON(`[{"id":"deepseek-flash","aliases":["claude-deepseek-flash[1M]"]}]`), Overrides: models.JSON(`{}`), Enabled: true,
+	})
+	mustEnsureInitialPrices(t, fixture)
+
+	all, err := fixture.service.ListProjectModels(t.Context(), ProjectModelListQuery{
+		GroupStatus: ProjectModelGroupStatusAll, PricingStatus: ProjectModelPricingStatusAll, Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 派生基名与带后缀别名并列出现，上游 ID 仍是第三条。
+	if len(all.Items) != 3 || all.Items[0].ClientModel != "claude-deepseek-flash" ||
+		all.Items[1].ClientModel != "claude-deepseek-flash[1M]" || all.Items[2].ClientModel != "deepseek-flash" {
+		t.Fatalf("client model overview = %#v", all.Items)
+	}
+	for _, item := range all.Items {
+		if len(item.UpstreamModels) != 1 {
+			t.Fatalf("client model %q upstreams = %#v", item.ClientModel, item.UpstreamModels)
+		}
+		// 前端要求 alias_applied 为 false 时 model_id 必须等于 client_model；
+		// 派生基名来自别名，与上游 ID 不同名，alias_applied 为 true 才是准确的。
+		wantAliasApplied := item.ClientModel != "deepseek-flash"
+		if upstream := item.UpstreamModels[0]; upstream.ModelID != "deepseek-flash" ||
+			upstream.AliasApplied != wantAliasApplied {
+			t.Fatalf("client model %q upstream = %#v", item.ClientModel, upstream)
+		}
+	}
+	// 三条记录共用一个价格身份，上游模型数不小于客户端模型数。
+	if all.Summary.ClientModelCount != 3 || all.Summary.UpstreamModelCount != 3 || all.Summary.PriceCount != 1 {
+		t.Fatalf("summary = %#v", all.Summary)
+	}
+
+	detail, err := fixture.service.GetUpstreamModelDetail(t.Context(), all.Items[0].UpstreamModels[0].Price.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	associated := make(map[string]bool, len(detail.Associations))
+	for _, association := range detail.Associations {
+		associated[association.ClientModel] = association.AliasApplied
+	}
+	if applied, exists := associated["claude-deepseek-flash"]; !exists || !applied {
+		t.Fatalf("derived base name missing from detail associations: %#v", detail.Associations)
+	}
+	if applied, exists := associated["deepseek-flash"]; !exists || applied {
+		t.Fatalf("upstream id association = %#v", detail.Associations)
+	}
+}
+
 func TestProjectModelsHTTPScopesAccessKeyFiltersAndRelationships(t *testing.T) {
 	t.Parallel()
 	initControlI18n(t)

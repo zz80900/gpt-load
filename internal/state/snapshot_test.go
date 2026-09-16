@@ -57,6 +57,124 @@ func TestCompileIndexesExternalModelsAndPreservesUpstreamIDs(t *testing.T) {
 	}
 }
 
+func TestRoutableModelNamesExpandsContextSuffixBase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		model ModelConfig
+		want  []string
+	}{
+		{
+			name:  "without suffix matches external names",
+			model: ModelConfig{ID: "provider-a", Aliases: []string{"public", "secondary"}},
+			want:  []string{"provider-a", "public", "secondary"},
+		},
+		{
+			name:  "alias suffix derives base after the alias",
+			model: ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1M]"}},
+			want:  []string{"deepseek-flash", "claude-deepseek-flash[1M]", "claude-deepseek-flash"},
+		},
+		{
+			name:  "lower suffix derives base as well",
+			model: ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1m]"}},
+			want:  []string{"deepseek-flash", "claude-deepseek-flash[1m]", "claude-deepseek-flash"},
+		},
+		{
+			name:  "suffix only alias derives nothing",
+			model: ModelConfig{ID: "deepseek-flash", Aliases: []string{"[1M]"}},
+			want:  []string{"deepseek-flash", "[1M]"},
+		},
+		{
+			name:  "id suffix derives base",
+			model: ModelConfig{ID: "deepseek-flash[1M]"},
+			want:  []string{"deepseek-flash[1M]", "deepseek-flash"},
+		},
+		{
+			name:  "derived name duplicating the id is registered once",
+			model: ModelConfig{ID: "xxxx", Aliases: []string{"xxxx[1M]"}},
+			want:  []string{"xxxx", "xxxx[1M]"},
+		},
+		{
+			name:  "derived name duplicating a later alias is registered once",
+			model: ModelConfig{ID: "xxxx[1M]", Aliases: []string{"xxxx"}},
+			want:  []string{"xxxx[1M]", "xxxx"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := RoutableModelNames(test.model)
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("RoutableModelNames(%#v) = %#v, want %#v", test.model, got, test.want)
+			}
+		})
+	}
+}
+
+// 无后缀模型是存量配置的绝大多数，两个名称集合必须逐项相等：任何差异都会改变
+// 路由索引、模型页与冲突检测的既有行为。
+func TestRoutableModelNamesMatchesExternalNamesWithoutSuffix(t *testing.T) {
+	t.Parallel()
+
+	models := []ModelConfig{
+		{ID: "provider-a", Aliases: []string{"public", "secondary"}},
+		{ID: "plain"},
+		{ID: "  padded  ", Aliases: []string{"  public  ", "", "public", "plain"}},
+		{ID: "bracketed", Aliases: []string{"bracketed[2M]", "xx[128K]yy"}},
+		{},
+	}
+	for _, model := range models {
+		want := ExternalModelNames(model)
+		if got := RoutableModelNames(model); !reflect.DeepEqual(got, want) {
+			t.Fatalf("RoutableModelNames(%#v) = %#v, want ExternalModelNames %#v", model, got, want)
+		}
+	}
+}
+
+func TestCompileIndexesContextSuffixAliasBase(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := Compile(CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "deepseek-flash", Aliases: []string{"claude-deepseek-flash[1M]"}}}, Enabled: true},
+			// 同一个基名的另一条目的一条别名，验证派生名不会串到别的上游。
+			{ConnectionType: "api_key", ID: 2, Name: "two", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "qwen-flash", Aliases: []string{"claude-qwen-flash[1m]"}}}, Enabled: true},
+			// 基名为空的别名不产生派生名：索引里不能出现空键。
+			{ConnectionType: "api_key", ID: 3, Name: "three", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "suffix-only", Aliases: []string{"[1M]"}}}, Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	for indexName, index := range map[string]ExecutionCandidateIndex{
+		"candidates":    snapshot.ExecutionCandidates,
+		"route catalog": snapshot.ExecutionRouteCatalog,
+	} {
+		byModel := index[protocol.Anthropic][execution.OperationChatCompletion]
+		for name, wantUpstream := range map[string]string{
+			"claude-deepseek-flash[1M]": "deepseek-flash",
+			"claude-deepseek-flash":     "deepseek-flash",
+			"claude-qwen-flash[1m]":     "qwen-flash",
+			"claude-qwen-flash":         "qwen-flash",
+			"deepseek-flash":            "deepseek-flash",
+			"[1M]":                      "suffix-only",
+		} {
+			targets := byModel[name]
+			if len(targets) != 1 || targets[0].UpstreamModelID != wantUpstream {
+				t.Fatalf("%s targets for %q = %#v, want upstream %q", indexName, name, targets, wantUpstream)
+			}
+		}
+		if targets, exists := byModel[NoModelRouteKey]; exists {
+			t.Fatalf("%s registered an empty model key: %#v", indexName, targets)
+		}
+	}
+}
+
 func TestCompileIndexesOpenAIImagesOperationsForAllConfiguredModels(t *testing.T) {
 	t.Parallel()
 
@@ -298,6 +416,19 @@ func TestCompileRejectsInvalidCoreConfiguration(t *testing.T) {
 			name:    "duplicate external model",
 			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "a"}, {ID: "b", Aliases: []string{"a"}}}, Enabled: true}}},
 			wantErr: "duplicate external model",
+		},
+		{
+			// 派生名（后缀基名）与他人显式名撞名：用户配置里没有 "xxxx" 这个重复项，
+			// 报错必须指出它由哪条别名派生，否则无从定位。
+			name:    "derived suffix name conflicts with explicit name",
+			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "xxxx"}, {ID: "provider", Aliases: []string{"xxxx[1M]"}}}, Enabled: true}}},
+			wantErr: `duplicate routed model "xxxx": model "provider" derives it from "xxxx[1M]"`,
+		},
+		{
+			// 存量数据的另一种排列：带后缀别名先被认领，后一个条目显式写了基名。
+			name:    "explicit name conflicts with derived suffix name",
+			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "provider", Aliases: []string{"xxxx[1m]"}}, {ID: "xxxx"}}, Enabled: true}}},
+			wantErr: `duplicate external model "xxxx": model "provider" already claims it by stripping the context suffix from "xxxx[1m]"`,
 		},
 		{
 			name: "duplicate group id",
