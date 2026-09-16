@@ -311,11 +311,11 @@ func (s *Service) DeleteModelPrice(ctx context.Context, id uint) error {
 			return err
 		}
 		reference := references.references[identity]
-		if reference.referenceCount > 0 {
+		if reference.referenceCount() > 0 {
 			return app_errors.NewAPIErrorWithData(
 				app_errors.ErrModelPriceReferenced,
 				ModelPriceReferenceData{
-					ID: id, ReferenceCount: reference.referenceCount,
+					ID: id, ReferenceCount: reference.referenceCount(),
 					ReferenceGroupCount: reference.referenceGroupCount(),
 				},
 			)
@@ -602,13 +602,13 @@ func projectModelPriceRow(
 		Method:              modelPriceMethod(row, configured, matchedAutomaticPrice),
 		MatchedProviderID:   matchedProviderID,
 		MatchSource:         matchSource,
-		Referenced:          reference.referenceCount > 0,
-		ReferenceCount:      reference.referenceCount,
+		Referenced:          reference.referenceCount() > 0,
+		ReferenceCount:      reference.referenceCount(),
 		ReferenceGroupCount: reference.referenceGroupCount(),
 		ContextTiers:        projectContextPriceTiers(rule.ContextTiers),
 		UpdatedAtMS:         row.UpdatedAtMS,
 		CanReset:            row.IsManual,
-		CanDelete:           row.IsManual && reference.referenceCount == 0,
+		CanDelete:           row.IsManual && reference.referenceCount() == 0,
 	}
 	return modelPriceListRecord{dto: dto}, nil
 }

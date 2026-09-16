@@ -9,13 +9,28 @@ import (
 	"gpt-load/internal/catalog"
 	app_errors "gpt-load/internal/platform/errors"
 	"gpt-load/internal/pricing"
+	"gpt-load/internal/state"
 	"gpt-load/internal/storage/models"
 )
 
 type referencedPrice struct {
-	identity       pricing.Identity
-	referenceCount int
-	groupIDs       map[uint]struct{}
+	identity pricing.Identity
+	// associationKeys 是「分组 + 客户端可见名称」的去重键集合，见 priceAssociationKey。
+	associationKeys map[string]struct{}
+	groupIDs        map[uint]struct{}
+}
+
+// referenceCount 与上游模型详情页的 associations 同粒度：每条关联是「某个分组下的
+// 某个客户端可见名称」。计数取集合大小，两者不可能给出不同的数。
+func (reference referencedPrice) referenceCount() int {
+	return len(reference.associationKeys)
+}
+
+// priceAssociationKey 是「分组 + 客户端可见名称」关联的去重键。价格引用计数与
+// 上游模型详情页的关联列表共用它，两处口径由此在结构上一致；分头拼 key 会让
+// 计数与列表在存量数据上再次漂移。
+func priceAssociationKey(groupID uint, clientModel string) string {
+	return fmt.Sprintf("%d\x00%s", groupID, clientModel)
 }
 
 func (reference referencedPrice) referenceGroupCount() int {
@@ -106,9 +121,16 @@ func buildPriceReferenceSnapshot(groups []models.Group) (priceReferenceSnapshot,
 			}
 			reference, exists := references[identity]
 			if !exists {
-				reference = referencedPrice{identity: identity, groupIDs: make(map[uint]struct{})}
+				reference = referencedPrice{
+					identity:        identity,
+					associationKeys: make(map[string]struct{}),
+					groupIDs:        make(map[uint]struct{}),
+				}
 			}
-			reference.referenceCount++
+			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名。
+			for _, clientModel := range state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
+				reference.associationKeys[priceAssociationKey(group.ID, clientModel)] = struct{}{}
+			}
 			reference.groupIDs[group.ID] = struct{}{}
 			references[identity] = reference
 		}

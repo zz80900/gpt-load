@@ -66,7 +66,7 @@ export default {
       failed: '无法删除价格记录',
     },
     errors: {
-      referenced: '该价格仍被 {entries} 处配置引用，涉及 {groups} 个分组',
+      referenced: '该价格仍有 {entries} 处引用，涉及 {groups} 个分组',
       automaticDeleteForbidden: '自动维护的价格不能直接删除，请先改为手动价格',
     },
   },

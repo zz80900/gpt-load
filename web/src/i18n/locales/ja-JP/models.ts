@@ -87,7 +87,7 @@ export default {
       loading: '読み込み中…',
       loadFailed: '上流モデルの詳細を読み込めません',
       sharedImpact:
-        '同じ価格識別子は {references} 件のモデル設定から参照され、クライアントモデル {clients} 件、グループ {groups} 件に影響します。保存内容はすべてに反映されます。',
+        '同じ価格識別子には {references} 件のクライアントモデル関連があり、クライアントモデル {clients} 件、グループ {groups} 件に影響します。保存内容はすべてに反映されます。',
       relationships: '関連',
       relationshipsHelp: '{count} 件の参照をクライアントモデルとグループごとに表示します',
       pricingChannel: '価格チャネル',

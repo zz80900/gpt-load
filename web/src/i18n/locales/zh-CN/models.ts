@@ -85,7 +85,7 @@ export default {
       loading: '正在加载…',
       loadFailed: '无法加载上游模型详情',
       sharedImpact:
-        '同一计价身份被 {references} 条模型配置引用，涉及 {clients} 个客户端模型和 {groups} 个分组；保存后全部生效。',
+        '同一计价身份有 {references} 条客户端模型关联，覆盖 {clients} 个客户端模型和 {groups} 个分组；保存后全部生效。',
       relationships: '关联关系',
       relationshipsHelp: '共 {count} 条引用，逐条显示客户端模型到分组的对应关系',
       pricingChannel: '计价渠道',

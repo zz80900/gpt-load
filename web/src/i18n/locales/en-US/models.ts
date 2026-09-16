@@ -86,7 +86,7 @@ export default {
       loading: 'Loading…',
       loadFailed: 'Unable to load upstream model details',
       sharedImpact:
-        'This pricing identity has {references} model references across {clients} client models and {groups} Groups; saving applies to all of them.',
+        'This pricing identity has {references} client-model associations across {clients} client models and {groups} Groups; saving applies to all of them.',
       relationships: 'Relationships',
       relationshipsHelp: '{count} references, each shown with its client model and Group',
       pricingChannel: 'Pricing channel',

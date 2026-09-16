@@ -41,7 +41,9 @@ func TestChannelModelPriceIsSharedAcrossGroupsAndAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Items) != 1 || listed.Items[0].ReferenceCount != 3 || listed.Items[0].ReferenceGroupCount != 2 {
+	// 引用数按 (分组, 客户端可见名称) 关联计：first 分组两条记录（别名 client-a、
+	// client-b）各一条，second 分组一条记录一条，合计 5；分组数仍为 2。
+	if len(listed.Items) != 1 || listed.Items[0].ReferenceCount != 5 || listed.Items[0].ReferenceGroupCount != 2 {
 		t.Fatalf("listed prices = %#v", listed)
 	}
 	encoded, err := json.Marshal(listed)

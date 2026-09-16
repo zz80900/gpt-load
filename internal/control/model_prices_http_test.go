@@ -421,9 +421,11 @@ func TestModelPriceHTTPResetDeleteAndStableErrorData(t *testing.T) {
 			"",
 			authTestKey,
 		)
+		// 引用数按 (分组, 客户端可见名称) 关联计：reference-one 两条记录（别名 one、
+		// two）贡献 3 条关联，reference-two 一条记录（别名 three）贡献 2 条，合计 5。
 		assertModelPriceHTTPError(t, response, http.StatusConflict,
 			"MODEL_PRICE_REFERENCED", map[string]any{
-				"id": float64(row.ID), "reference_count": float64(3), "reference_group_count": float64(2),
+				"id": float64(row.ID), "reference_count": float64(5), "reference_group_count": float64(2),
 			})
 	})
 

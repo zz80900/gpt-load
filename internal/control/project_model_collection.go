@@ -494,7 +494,7 @@ func (s *Service) GetUpstreamModelDetail(ctx context.Context, priceID uint) (Ups
 			}
 			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名。
 			for _, clientModel := range state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
-				key := fmt.Sprintf("%d\x00%s", group.row.ID, clientModel)
+				key := priceAssociationKey(group.row.ID, clientModel)
 				if _, duplicate := seenAssociations[key]; duplicate {
 					continue
 				}
