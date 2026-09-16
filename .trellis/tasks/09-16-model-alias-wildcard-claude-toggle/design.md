@@ -389,19 +389,38 @@ function setAliases(index: number, aliases: string[]): void {
 `normalizeAliases`（`model-draft.ts:127`）本身**不改**：它只做 trim、去空、去 ID、
 精确去重，通配符字面量能原样通过——这正是开关状态能穿过保存、脏检查与同步的原因。
 
-### 5.6 冲突错误的位置
+### 5.6 开关互斥与冲突错误的落点
 
-前端 `findModelNameConflicts`（`model-draft.ts:152`）**不需要改**：它按精确字符串认领
-名称，与后端 R16/R18/R20 的规则逐条一致。两个模型同时开开关时它会正确报出
-`claude-*[1m]` 冲突，后端也会同样拒绝。
+**开关在分组内互斥。** `setClaudeAdapter(index, true)` 不只改本行，还要清掉分组内其他
+所有行的常量别名，因此它不能用 `updateRow`（那只改一行），必须自己 `map` 整个
+`modelValue`：目标行按 `enabled` 写入，其余行在 `enabled` 为真且已含常量时按
+`false` 写回，既不匹配的行只克隆 `sources`。关闭某个开关只影响它自己。
 
-需要改的是**错误的呈现位置**。现在 `ModelAliasEditor.modelAliasError` 会把冲突归到
-别名列，而该别名被隐藏了——用户会看到一行红底、别名框空空如也、错误文案指着一个
-看不见的字符串（AC20）。处理方式：冲突名是 `claudeAdapterAlias` 之一时，把错误改
-挂到开关单元格上，并使用专门的文案（`claudeAdapterConflict(id)`），指出「本分组内
-已有模型启用 Claude 适配」。这需要在 `ModelAliasEditor.vue` 里新增一个
+理由：后端的同名模式冲突规则要求同一分组内两个上游不能认领 `claude-*[1m]`，这条规则
+本身是对的、也必须保留；但让用户「先手工关掉另一个再打开这一个」是把一条内部约束
+泄漏成了操作步骤。互斥让那个状态在 UI 上根本不可能出现。
+
+`withClaudeAdapter` 与整个 `map` 都必须构造**新数组**。`GroupModelsTab.vue:243` 的
+`saved` 与 `draft` **共享同一个 `aliases` 数组引用**（展开对象时没有展开数组），就地
+`push` 会污染 `saved`，使 `dirty` 永远为真且 `discard()` 无法恢复。
+
+`normalizeAliases`（`model-draft.ts:127`）本身**不改**：它只做 trim、去空、去 ID、
+精确去重，通配符字面量能原样通过——这正是开关状态能穿过保存、脏检查与同步的原因。
+
+前端 `findModelNameConflicts`（`model-draft.ts:152`）**也不需要改**：它按精确字符串
+认领名称，与后端 R17/R19/R21 的规则逐条一致。互斥把开关路径的冲突消解掉了，但这个
+检测本身仍然正确。
+
+需要的是**错误呈现位置**。`ModelAliasEditor.modelAliasError` 会把冲突归到别名列，而
+该别名被隐藏了——用户会看到一行红底、别名框空空如也、错误文案指着一个看不见的字符
+串。处理方式：冲突名是 `claudeAdapterAlias` 之一时，把错误改挂到开关单元格上，并使用
+专门的文案（`claudeAdapterConflict()`）。这需要在 `ModelAliasEditor.vue` 里保留
 `claudeAdapterError(index)`，并在 `visibleInvalidIndexes` 的计算里把开关单元格的错误
 一并纳入。
+
+**这条错误现在只覆盖开关管不到的通路**：用户在别名框里手输了两次 `claude-*[1m]`，或
+库里存在改动前保存的重复数据。互斥不做拦截——手输是在具体字段里发生的，静默删掉另一
+行的值会让用户莫名其妙。
 
 ### 5.7 列的启用：一个可选 prop，不用必填 label
 

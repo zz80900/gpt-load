@@ -166,7 +166,7 @@ Every model in a group has an upstream ID and any number of client-facing aliase
 - **Conflicts** — within one group, two different upstream IDs cannot claim the same alias, including the same pattern; the save is rejected with `MODEL_NAME_CONFLICT`.
 - **Known edges** — a bare `*` is a legal alias, and it captures every request name in the group that has no exact match, so unknown models reach that upstream instead of returning 503. A `*` alias that already existed before this feature was inert (it matched nothing); it now routes for real.
 
-**Claude adapter toggle** — the model table on a group page has a *Claude adapter* column between the alias and pricing columns. Turning it on is exactly equivalent to adding the alias `claude-*[1m]` to that model, which routes every Claude model name to that upstream; turning it off removes the alias. The alias itself is not shown in the alias field — the toggle owns it. Only one model per group can have it enabled.
+**Claude adapter toggle** — the model table on a group page has a *Claude adapter* column between the alias and pricing columns. Turning it on is exactly equivalent to adding the alias `claude-*[1m]` to that model, which routes every Claude model name to that upstream; turning it off removes the alias. The alias itself is not shown in the alias field — the toggle owns it. Only one model per group can have it enabled: turning it on for one model switches it off for whichever model in that group had it.
 
 ### Built-in channels
 

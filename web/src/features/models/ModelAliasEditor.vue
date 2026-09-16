@@ -129,11 +129,37 @@ function setAliases(index: number, aliases: string[]): void {
   })
 }
 
-/** 开关只改写别名数组，不引入任何新的持久化字段。 */
+/**
+ * 开关只改写别名数组，不引入任何新的持久化字段。
+ *
+ * 开关在分组内互斥：打开一个会自动关掉其余全部，因此同一时刻只会有一个模型启用
+ * Claude 适配。做成互斥而不是报错，是因为后端的同名模式冲突规则（同一分组内两个
+ * 上游认领 claude-*[1m]）依然成立，但用户不该被迫先手工关掉另一个才能打开这一个。
+ * 关闭某个开关只影响它自己。
+ */
 function setClaudeAdapter(index: number, enabled: boolean): void {
   const item = props.modelValue[index]
   if (item === undefined) return
-  updateRow(index, { aliases: withClaudeAdapter(item.aliases, enabled) })
+  emit(
+    'update:modelValue',
+    props.modelValue.map((current, position) => {
+      if (position === index) {
+        return {
+          ...current,
+          aliases: withClaudeAdapter(current.aliases, enabled),
+          sources: [...current.sources],
+        } as T
+      }
+      if (enabled && hasClaudeAdapter(current.aliases)) {
+        return {
+          ...current,
+          aliases: withClaudeAdapter(current.aliases, false),
+          sources: [...current.sources],
+        } as T
+      }
+      return { ...current, sources: [...current.sources] } as T
+    }),
+  )
 }
 
 function removeRow(index: number): void {
@@ -182,8 +208,10 @@ function modelAliasError(item: ModelDraftValue, index: number): string {
 /**
  * claudeAdapterError 把「本分组内已有别的模型占用 Claude 适配别名」这一冲突挂到开关列。
  *
- * 文案不点名占用者：冲突的另一个模型必然开着同一个开关，用户看这一列就能找到它；而
- * 反查占用者的 ID 在空 ID 行上会退化成一句残缺的话。
+ * 开关自身已经互斥，所以这条错误只会出现在开关管不到的地方：用户在别名框里手输了
+ * 两次 claude-*[1m]，或库里存在本次改动之前保存的重复数据。文案不点名占用者——冲突的
+ * 另一个模型必然开着同一个开关，看这一列就能找到它；而反查占用者 ID 在空 ID 行上会
+ * 退化成一句残缺的话。
  */
 function claudeAdapterError(index: number): string {
   const adapter = props.claudeAdapter
