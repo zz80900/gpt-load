@@ -5,19 +5,35 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import LedgerRecordList from '@/components/collection/LedgerRecordList.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSearchInput from '@/components/ui/AppSearchInput.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppTextInput from '@/components/ui/AppTextInput.vue'
 import CompactFieldError from '@/components/ui/CompactFieldError.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import TagInput from '@/components/ui/TagInput.vue'
 
 import {
+  hasClaudeAdapter,
+  isClaudeAdapterAlias,
   modelDraftValidity,
   normalizeAliases,
+  visibleAliases,
+  withClaudeAdapter,
   type ModelAliasEditorLabels,
   type ModelDraftKey,
   type ModelDraftValue,
   type ModelNameConflict,
 } from './model-draft'
+
+/**
+ * ClaudeAdapterLabels 同时承担「启用该列」与「提供其文案」两件事：提供即渲染，不提供
+ * 即整列缺席。这样批量导入页复用本组件时既不会多出一个空轨道，也不必提供一份用不到的
+ * 必填文案。
+ */
+export interface ClaudeAdapterLabels {
+  title: string
+  forModel: (id: string) => string
+  conflict: () => string
+}
 
 const props = withDefaults(
   defineProps<{
@@ -31,6 +47,7 @@ const props = withDefaults(
     search?: string
     validationMode?: 'immediate' | 'blur'
     showAllErrors?: boolean
+    claudeAdapter?: ClaudeAdapterLabels
   }>(),
   {
     createRow: undefined,
@@ -40,6 +57,7 @@ const props = withDefaults(
     search: undefined,
     validationMode: 'immediate',
     showAllErrors: false,
+    claudeAdapter: undefined,
   },
 )
 const emit = defineEmits<{
@@ -53,6 +71,7 @@ const root = ref<HTMLElement>()
 const internalSearch = ref(props.search ?? '')
 const touchedModelIDs = ref<Set<ModelDraftKey>>(new Set())
 const touchedAliases = ref<Set<ModelDraftKey>>(new Set())
+const touchedClaudeAdapter = ref<Set<ModelDraftKey>>(new Set())
 const searchValue = computed({
   get: () => internalSearch.value,
   set: (value: string) => {
@@ -67,11 +86,19 @@ watch(
   },
 )
 const validity = computed(() => modelDraftValidity(props.modelValue, props.conflicts))
+/** 只在提供了 claudeAdapter 时插入开关列与它的栅格轨道。 */
+const gridClass = computed(() =>
+  props.claudeAdapter === undefined
+    ? 'model-alias-editor__grid'
+    : 'model-alias-editor__grid model-alias-editor__grid--claude',
+)
 const visibleRows = computed(() => {
   const query = searchValue.value.trim().toLocaleLowerCase()
   return props.modelValue.flatMap((item, index) =>
     !query ||
-    `${item.id} ${item.name} ${item.aliases.join(' ')}`.toLocaleLowerCase().includes(query)
+    `${item.id} ${item.name} ${visibleAliases(item.aliases).join(' ')}`
+      .toLocaleLowerCase()
+      .includes(query)
       ? [{ item, index }]
       : [],
   )
@@ -88,11 +115,25 @@ function updateRow(index: number, patch: Partial<Pick<ModelDraftValue, 'id' | 'a
   )
 }
 
-/** 别名在写入草稿前先规范化：trim、去空、去 ID、去重，与服务端同规则。 */
+/**
+ * 别名在写入草稿前先规范化：trim、去空、去 ID、去重，与服务端同规则。
+ *
+ * 入参是输入框发出的「可见」列表，因此必须先把开关状态合并回去：否则用户只是编辑了
+ * 一个普通别名，被隐藏的 claude-*[1m] 就会被当成「已删除的别名」丢掉。
+ */
 function setAliases(index: number, aliases: string[]): void {
   const item = props.modelValue[index]
   if (item === undefined) return
-  updateRow(index, { aliases: normalizeAliases(aliases, item.id) })
+  updateRow(index, {
+    aliases: normalizeAliases(withClaudeAdapter(aliases, hasClaudeAdapter(item.aliases)), item.id),
+  })
+}
+
+/** 开关只改写别名数组，不引入任何新的持久化字段。 */
+function setClaudeAdapter(index: number, enabled: boolean): void {
+  const item = props.modelValue[index]
+  if (item === undefined) return
+  updateRow(index, { aliases: withClaudeAdapter(item.aliases, enabled) })
 }
 
 function removeRow(index: number): void {
@@ -133,8 +174,21 @@ function modelIDError(item: ModelDraftValue, index: number): string {
 
 function modelAliasError(item: ModelDraftValue, index: number): string {
   const name = conflictName(index)
-  if (name === '' || name === item.id.trim()) return ''
+  // 冲突名是 Claude 适配常量时它并不显示在别名框里，错误改由开关列呈现（AC20）。
+  if (name === '' || name === item.id.trim() || isClaudeAdapterAlias(name)) return ''
   return conflictMessage(index)
+}
+
+/**
+ * claudeAdapterError 把「本分组内已有别的模型占用 Claude 适配别名」这一冲突挂到开关列。
+ *
+ * 文案不点名占用者：冲突的另一个模型必然开着同一个开关，用户看这一列就能找到它；而
+ * 反查占用者的 ID 在空 ID 行上会退化成一句残缺的话。
+ */
+function claudeAdapterError(index: number): string {
+  const adapter = props.claudeAdapter
+  if (adapter === undefined || !isClaudeAdapterAlias(conflictName(index))) return ''
+  return adapter.conflict()
 }
 
 function visibleModelIDError(item: ModelDraftValue, index: number): string {
@@ -164,11 +218,28 @@ function visibleModelAliasError(item: ModelDraftValue, index: number): string {
   return ''
 }
 
+function visibleClaudeAdapterError(item: ModelDraftValue, index: number): string {
+  const error = claudeAdapterError(index)
+  if (!error) return ''
+  if (
+    props.validationMode === 'immediate' ||
+    props.showAllErrors ||
+    touchedClaudeAdapter.value.has(item.key)
+  ) {
+    return error
+  }
+  return ''
+}
+
 const visibleInvalidIndexes = computed(
   () =>
     new Set(
       props.modelValue.flatMap((item, index) =>
-        visibleModelIDError(item, index) || visibleModelAliasError(item, index) ? [index] : [],
+        visibleModelIDError(item, index) ||
+        visibleModelAliasError(item, index) ||
+        visibleClaudeAdapterError(item, index)
+          ? [index]
+          : [],
       ),
     ),
 )
@@ -187,6 +258,11 @@ function touchAlias(key: ModelDraftKey): void {
   touchedAliases.value = new Set(touchedAliases.value).add(key)
 }
 
+function touchClaudeAdapter(key: ModelDraftKey): void {
+  if (touchedClaudeAdapter.value.has(key)) return
+  touchedClaudeAdapter.value = new Set(touchedClaudeAdapter.value).add(key)
+}
+
 async function focusFirstInvalid(): Promise<void> {
   const index = Math.min(...validity.value.invalidIndexes)
   if (!Number.isFinite(index)) return
@@ -196,15 +272,20 @@ async function focusFirstInvalid(): Promise<void> {
   const targetsModelID =
     validity.value.emptyIDIndexes.has(index) ||
     (conflict !== '' && item !== undefined && conflict === item.id.trim())
+  const targetsClaudeAdapter =
+    !targetsModelID && props.claudeAdapter !== undefined && isClaudeAdapterAlias(conflict)
   if (item) {
     if (targetsModelID) touchModelID(item.key)
+    else if (targetsClaudeAdapter) touchClaudeAdapter(item.key)
     else touchAlias(item.key)
   }
   await nextTick()
   const selector = targetsModelID
     ? `[data-model-id-index="${index}"]`
-    : `[data-alias-input-index="${index}"]`
-  root.value?.querySelector<HTMLInputElement>(selector)?.focus()
+    : targetsClaudeAdapter
+      ? `[data-claude-adapter-index="${index}"]`
+      : `[data-alias-input-index="${index}"]`
+  root.value?.querySelector<HTMLElement>(selector)?.focus()
 }
 
 defineExpose({ addManual, focusFirstInvalid })
@@ -231,11 +312,12 @@ defineExpose({ addManual, focusFirstInvalid })
     <LedgerRecordList
       :label="labels.tableLabel"
       :row-count="(visibleRows.length || 1) + 1"
-      grid-class="model-alias-editor__grid"
+      :grid-class="gridClass"
     >
       <template #header>
         <span role="columnheader">{{ labels.id }}</span>
         <span role="columnheader">{{ labels.alias }}</span>
+        <span v-if="claudeAdapter" role="columnheader">{{ claudeAdapter.title }}</span>
         <span role="columnheader">{{ labels.thirdColumn }}</span>
         <span role="columnheader"
           ><span class="sr-only">{{ labels.actions }}</span></span
@@ -290,7 +372,7 @@ defineExpose({ addManual, focusFirstInvalid })
             <template #default="{ invalid, describedBy }">
               <TagInput
                 :id="`${instanceId}-model-alias-${index}`"
-                :model-value="item.aliases"
+                :model-value="visibleAliases(item.aliases)"
                 :label="labels.aliasFor(item.id)"
                 :placeholder="labels.aliasPlaceholder"
                 :remove-label="labels.removeAliasFor"
@@ -300,6 +382,31 @@ defineExpose({ addManual, focusFirstInvalid })
                 :data-alias-input-index="index"
                 @update:model-value="setAliases(index, $event)"
                 @blur="touchAlias(item.key)"
+              />
+            </template>
+          </CompactFieldError>
+        </div>
+
+        <div
+          v-if="claudeAdapter"
+          class="ledger-record-list__cell model-alias-editor__claude-cell"
+          role="cell"
+        >
+          <span class="model-alias-editor__mobile-label">{{ claudeAdapter.title }}</span>
+          <CompactFieldError
+            :id="`${instanceId}-claude-adapter-${index}`"
+            class="model-alias-editor__claude-field"
+            :error="visibleClaudeAdapterError(item, index)"
+          >
+            <template #default="{ describedBy }">
+              <AppSwitch
+                :model-value="hasClaudeAdapter(item.aliases)"
+                :label="claudeAdapter.forModel(item.id)"
+                :disabled="disabled"
+                :aria-describedby="describedBy"
+                :data-claude-adapter-index="index"
+                @update:model-value="setClaudeAdapter(index, $event)"
+                @blur="touchClaudeAdapter(item.key)"
               />
             </template>
           </CompactFieldError>
@@ -385,6 +492,15 @@ defineExpose({ addManual, focusFirstInvalid })
   --ledger-record-list-column-gap: 16px;
 }
 
+/*
+ * Claude 适配列插在别名与价格状态之间，因此第 2 个轨道多一个开关宽度。列顺序完全由
+ * DOM 顺序决定（表头与记录行都是 subgrid），插入表头与插入单元格必须成对，否则后面
+ * 所有列会静默错位。批量导入页不传 claudeAdapter，走的仍是上面那条 4 轨道规则。
+ */
+.model-alias-editor__grid--claude {
+  --ledger-record-list-grid: minmax(180px, 24fr) minmax(280px, 52fr) 116px minmax(120px, 18fr) 40px;
+}
+
 .model-alias-editor__grid :deep(.ledger-record-list__header) {
   font-size: var(--text-label-xs);
   font-weight: 500;
@@ -395,8 +511,20 @@ defineExpose({ addManual, focusFirstInvalid })
 }
 
 .model-alias-editor__id,
+.model-alias-editor__claude-cell,
 .model-alias-editor__third-column {
   min-width: 0;
+}
+
+.model-alias-editor__claude-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.model-alias-editor__claude-field {
+  width: auto;
 }
 
 .model-alias-editor__id {
@@ -491,10 +619,25 @@ defineExpose({ addManual, focusFirstInvalid })
 
   .model-alias-editor__id,
   .model-alias-editor__alias-cell,
+  .model-alias-editor__claude-cell,
   .model-alias-editor__third-column {
     display: grid;
     align-content: start;
     gap: 5px;
+  }
+
+  /* 卡片模式下表头被隐藏，列位置完全由自动排布决定：不给开关列显式占满整行，它会和
+     价格状态挤在同一行的两列里。 */
+  .model-alias-editor__claude-cell {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .model-alias-editor__claude-cell .model-alias-editor__mobile-label {
+    flex-basis: 100%;
   }
 
   .model-alias-editor__alias-cell {

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/model-name-contract.md", "reason": "检查实现是否满足该契约的全部条款，或是否已按 design.md §8 显式修订了与之冲突的条款。特别核对：ExternalModelNames 是否仍严格等于 [id, ...aliases]、RoutableModelNames 是否仍含模式字面量、三处冲突检测的严格/宽松分工是否保持不变、计数契约的回归基线表是否补了含 * 的行。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "检查新增的 modelname 纯函数、state 索引构建、control 过滤点是否符合质量约定：注释语言与密度、命名、无重复定义、测试覆盖。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨层契约是否两端同口径：client_models 的形状（groups.ts 硬断言）、模型页三个计数（models.ts 硬断言）、以及「模式名不出现在任何名称枚举面」这条规则是否在后端 5 处与前端 6 处都落到了。"}
+{"file": ".trellis/spec/backend/request-log-pipeline.md", "reason": "检查通配符命中后 request log 的 client_model / upstream_model / upstream_reported_model 三列口径是否仍正确：client_model 必须是客户端原串而非模式串，upstream_model 必须是上游 ID。同时确认用量与计价聚合按上游 ID 取值、未被模式污染。"}

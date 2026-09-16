@@ -252,11 +252,13 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 			if !exists {
 				return ProjectModelListResponse{}, fmt.Errorf("missing model price row for %s: %w", identity.ModelID, app_errors.ErrInternalServer)
 			}
-			// 每个可路由名称（ID、别名，以及带上下文后缀别名的基名）都是客户端可用
-			// 的模型名，各自建一条记录；一个模型配 N 个别名，就会在模型页出现 N+1
-			// 条（后缀别名再多一条基名），与 /v1/models 遍历路由索引得到的可见集合
-			// 一致。这里必须用 RoutableModelNames，否则模型页与 /v1/models 对不上。
-			names := state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
+			// 每个可路由的具体名称（ID、别名，以及带上下文后缀别名的基名）都是客户
+			// 端可用的模型名，各自建一条记录；一个模型配 N 个别名，就会在模型页出现
+			// N+1 条（后缀别名再多一条基名），与 /v1/models 枚举出的可见集合一致。
+			// 这里必须用 ConcreteRoutableModelNames：通配符别名匹配的是一个无穷集合，
+			// 既不是可枚举的模型名，也不属于 /v1/models 会列出的具体名称，放进模型页
+			// 只会凭空多出一行名叫 "claude-*" 的假模型。
+			names := state.ConcreteRoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 			for _, clientModel := range names {
 				root := records[clientModel]
 				if root == nil {
@@ -492,8 +494,11 @@ func (s *Service) GetUpstreamModelDetail(ctx context.Context, priceID uint) (Ups
 			if model.ID != row.ModelID {
 				continue
 			}
-			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名。
-			for _, clientModel := range state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
+			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名，
+			// 通配符别名则两边都不计入。这一处与 ListProjectModels、buildPriceReferenceSnapshot
+			// 共同定义 reference_count / associations.length / client_model_count，
+			// 三处必须同时改，否则前端对这几个数字的交叉断言会让模型页整页失败。
+			for _, clientModel := range state.ConcreteRoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
 				key := priceAssociationKey(group.row.ID, clientModel)
 				if _, duplicate := seenAssociations[key]; duplicate {
 					continue

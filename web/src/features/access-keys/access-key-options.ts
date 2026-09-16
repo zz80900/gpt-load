@@ -1,6 +1,7 @@
 import type { AccessProtocol, GroupOptionDto } from '@/api/control/types'
 import { enabledDataProtocols } from '@/api/control/protocols'
 import type { ChannelDto } from '@/app/resources/channels'
+import { concreteModelNames } from '@/lib/model-name'
 
 export function accessKeyProtocolOptions(): AccessProtocol[] {
   return [...enabledDataProtocols]
@@ -32,7 +33,9 @@ export function buildAccessKeyModelOptions(
     values.push(...group.models)
   }
   values.push(...preserved)
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
+  // 通配符别名不进候选：白名单在服务端按精确（含上下文后缀归一）匹配，选中一个模式
+  // 只会得到一条永远命中不了的筛选值。
+  return concreteModelNames([...new Set(values.map((value) => value.trim()).filter(Boolean))])
 }
 
 function selectAccessKeyGroups(

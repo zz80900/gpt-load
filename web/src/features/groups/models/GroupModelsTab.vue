@@ -111,8 +111,7 @@ const emptyIDIndexes = computed(
   () => new Set(draft.value.flatMap((item, index) => (!item.id.trim() ? [index] : []))),
 )
 const invalidRowCount = computed(
-  () =>
-    new Set([...conflicts.value.flatMap((item) => item.indexes), ...emptyIDIndexes.value]).size,
+  () => new Set([...conflicts.value.flatMap((item) => item.indexes), ...emptyIDIndexes.value]).size,
 )
 const validationSummary = computed(() =>
   [
@@ -530,7 +529,7 @@ onBeforeUnmount(() => {
       v-if="(query.isPending.value && !query.data.value) || initialLoading"
       variant="collection"
       :rows="6"
-      :columns="3"
+      :columns="4"
       row-height="58px"
       mobile-row-height="112px"
       show-controls
@@ -554,6 +553,11 @@ onBeforeUnmount(() => {
         :create-row="createManualRow"
         :disabled="pending !== null"
         :search="routeState.search ?? ''"
+        :claude-adapter="{
+          title: t('group.modelEditor.claudeAdapter'),
+          forModel: (id: string) => t('group.modelEditor.claudeAdapterFor', { id }),
+          conflict: () => t('group.modelEditor.claudeAdapterConflict'),
+        }"
         @update:model-value="updateModels"
         @update:search="setModelSearch"
       >

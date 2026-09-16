@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -894,6 +896,99 @@ func TestAnthropicGatewayRoutesContextSuffixAliasBaseName(t *testing.T) {
 		if !strings.Contains(body, `"model":"deepseek-flash"`) {
 			t.Fatalf("upstream body = %s, want the configured upstream ID", body)
 		}
+	}
+}
+
+// 通配符别名的端到端证据：请求名从未在配置里出现过，经 claude-* 命中后仍然上下行两
+// 个方向都保持客户端原串——上游收到配置里的上游 ID，客户端收到自己发来的名称。
+func TestAnthropicGatewayRoutesWildcardAliasName(t *testing.T) {
+	receivedBodies := make([]string, 0, 3)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		receivedBodies = append(receivedBodies, string(body))
+		response := `{"type":"message","model":"provider-response"}`
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Length", strconv.Itoa(len(response)))
+		setRepresentationMetadata(writer.Header())
+		_, _ = writer.Write([]byte(response))
+	}))
+	defer upstream.Close()
+
+	// 客户端请求的模型名在配置里完全不存在：只有模式别名 claude-*[1m]。
+	engine, _ := newDialectGatewayEngine(t, protocol.Anthropic, "claude-opus-5",
+		dialect.NewSet(dialect.NewAnthropic()),
+		dialectGatewayGroup{
+			id: 1, name: "anthropic-wildcard", upstreamURL: upstream.URL, apiKeys: []string{"provider-key"},
+			models: []state.ModelConfig{{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"}}},
+		},
+	)
+
+	requested := []string{"claude-opus-5", "claude-sonnet-5", "claude-opus-5[1m]"}
+	for _, model := range requested {
+		request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"`+model+`"}`))
+		request.Header.Set("Authorization", "Bearer gl-client")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("model %q response = %d headers=%v body=%s", model, recorder.Code, recorder.Header(), recorder.Body.String())
+		}
+		var downstream struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &downstream); err != nil || downstream.Model != model {
+			t.Fatalf("model %q downstream model = %q, %v; body=%s", model, downstream.Model, err, recorder.Body.String())
+		}
+	}
+	if len(receivedBodies) != len(requested) {
+		t.Fatalf("upstream requests = %d, want %d", len(receivedBodies), len(requested))
+	}
+	for _, body := range receivedBodies {
+		if !strings.Contains(body, `"model":"deepseek-flash"`) {
+			t.Fatalf("upstream body = %s, want the configured upstream ID", body)
+		}
+	}
+}
+
+// 通配符是模式而不是模型名：/v1/models 枚举的是精确索引键，模式不在其中。
+func TestAnthropicModelListOmitsWildcardAlias(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	engine, _ := newDialectGatewayEngine(t, protocol.Anthropic, "deepseek-flash",
+		dialect.NewSet(dialect.NewAnthropic()),
+		dialectGatewayGroup{
+			id: 1, name: "anthropic-wildcard-list", upstreamURL: upstream.URL, apiKeys: []string{"provider-key"},
+			models: []state.ModelConfig{{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]", "client-a"}}},
+		},
+	)
+	request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	request.Header.Set("Authorization", "Bearer gl-client")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("model list response = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode model list: %v; body=%s", err, recorder.Body.String())
+	}
+	ids := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		if strings.Contains(item.ID, "*") {
+			t.Fatalf("model list leaked pattern %q: %s", item.ID, recorder.Body.String())
+		}
+		ids = append(ids, item.ID)
+	}
+	sort.Strings(ids)
+	want := []string{"client-a", "deepseek-flash"}
+	if !reflect.DeepEqual(ids, want) {
+		t.Fatalf("model list ids = %#v, want %#v", ids, want)
 	}
 }
 

@@ -6,6 +6,7 @@ import type { ModelCandidate } from '@/app/resources/providers'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import InlineFeedback from '@/components/ui/InlineFeedback.vue'
 import SegmentedControl, { type SegmentedControlOption } from '@/components/ui/SegmentedControl.vue'
+import { concreteModelNames } from '@/lib/model-name'
 
 import type { ModelDraftItem, ModelNameConflict, ModelSyncMode } from './model-diff'
 
@@ -38,7 +39,13 @@ const showRemovals = computed(() => props.mode === 'cleanup' || props.mode === '
 const activeAdditions = computed(() => (showAdditions.value ? props.additions : []))
 const activeRemovals = computed(() => (showRemovals.value ? props.removals : []))
 const additionPreview = computed(() => activeAdditions.value.slice(0, previewLimit))
-const removalPreview = computed(() => activeRemovals.value.slice(0, previewLimit))
+// 删除预览里的别名映射只展示可读的对外名称：通配符别名（如 claude-*[1m]）是模式而不是
+// 具体的客户端模型名，展示它只会让人以为要删掉一个叫这个名字的模型。
+const removalPreview = computed(() =>
+  activeRemovals.value
+    .slice(0, previewLimit)
+    .map((model) => ({ ...model, aliases: concreteModelNames(model.aliases) })),
+)
 const additionRemainder = computed(
   () => activeAdditions.value.length - additionPreview.value.length,
 )

@@ -75,6 +75,21 @@ type CredentialInspection struct {
 	CooldownUntil   time.Time
 }
 
+// matchModelPattern 在已按特异性降序排定的模式序列上查找首个命中的模式，返回它认领的
+// 目标；无命中返回 nil。
+//
+// 只取首个命中而不合并其余匹配：模式序列在构建期已排定顺序，因此「哪个模式胜出」只由
+// 配置内容决定，与请求到达顺序、map 遍历顺序无关。合并多个模式的目标会让路由结果依赖
+// 候选排序，正是冲突检测要排除的那类不确定性。
+func matchModelPattern(patterns []state.ModelPattern, name string) []state.RouteTarget {
+	for _, entry := range patterns {
+		if modelname.Match(entry.Pattern, name) {
+			return entry.Targets
+		}
+	}
+	return nil
+}
+
 // CredentialRuntimeView is the scheduler's neutral view of runtime health.
 type CredentialRuntimeView = state.CredentialRuntimeView
 
@@ -98,6 +113,7 @@ func cloneWeight(weight *int) *int {
 func evaluateTargets(
 	snapshot *state.ConfigSnapshot,
 	index state.ExecutionCandidateIndex,
+	patterns state.ModelPatternIndex,
 	query normalizedQuery,
 ) ([]targetDecision, ReasonCode, error) {
 	if snapshot == nil {
@@ -138,6 +154,12 @@ func evaluateTargets(
 		modelKey = *query.externalModel
 	}
 	routes := byModel[modelKey]
+	// 通配符兜底只在精确未命中时运行，且必须由 externalModel 的存在来把守：
+	// 无模型资源请求的键是保留空串 NoModelRouteKey，它只可能在精确索引里有目标，
+	// 绝不能进入模式匹配。精确命中时也直接返回，绝不把模式结果合并进来或参与重排。
+	if len(routes) == 0 && query.externalModel != nil {
+		routes = matchModelPattern(patterns[query.clientProtocol][query.operation], modelKey)
+	}
 	if len(routes) == 0 {
 		return []targetDecision{}, ReasonNoRouteTarget, nil
 	}
@@ -367,6 +389,7 @@ func Inspect(
 	decisions, staticReason, err := evaluateTargets(
 		snapshot,
 		snapshot.ExecutionRouteCatalog,
+		snapshot.ExecutionRoutePatterns,
 		normalized,
 	)
 	if err != nil {

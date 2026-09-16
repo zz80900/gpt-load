@@ -274,10 +274,12 @@ func (s *Service) readHomeRows(
 	return result, nil
 }
 
-// modelMatchesNameFilter 判断模型的任一对外名称是否落在允许集合里。
+// modelMatchesNameFilter 判断模型的一个具体对外名称是否落在允许集合里。
 // 一个模型可能有多个名称（ID + 别名），只要有一个可用即视为可见。
+// 通配符别名不参与：白名单按 modelname.Allows 做精确（含后缀归一）匹配，模式项在
+// 请求期永远命中不了，若在这里算作命中会让首页显示一个实际不可用的模型。
 func modelMatchesNameFilter(model state.ModelConfig, allowed map[string]struct{}) bool {
-	for _, name := range state.ExternalModelNames(model) {
+	for _, name := range state.ConcreteModelNames(model) {
 		if _, ok := allowed[name]; ok {
 			return true
 		}
@@ -399,7 +401,9 @@ func scopedHomeModelNames(
 				!modelMatchesNameFilter(model, accessKey.Filters.Models) {
 				continue
 			}
-			for _, name := range state.ExternalModelNames(model) {
+			// 首页名称聚合与「接入客户端」配置生成都消费这份集合，因此排除通配符
+			// 别名：模式不是客户端可以填进配置的具体模型名。
+			for _, name := range state.ConcreteModelNames(model) {
 				names[name] = struct{}{}
 			}
 		}

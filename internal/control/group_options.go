@@ -119,9 +119,11 @@ func mapGroupOptions(rows []groupOptionRow, registries ...*channel.Registry) ([]
 		}
 		// 模型候选集展开为「ID + 全部别名」：客户端可用其中任意一个名称请求。
 		// 存量分组可能存在同一 ID 的多个条目，这里按名称去重。
+		// 通配符别名被排除：它不是可请求的具体名称，列进候选集会让用户选中一个永远
+		// 匹配不上的筛选值（访问密钥白名单复用同一份候选）。
 		seenNames := make(map[string]struct{}, len(models))
 		for _, model := range models {
-			names := state.ExternalModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
+			names := state.ConcreteModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 			for _, name := range names {
 				if _, duplicate := seenNames[name]; duplicate {
 					continue

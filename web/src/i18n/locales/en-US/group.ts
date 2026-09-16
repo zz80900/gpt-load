@@ -128,6 +128,10 @@ export default {
       conflictSummary: 'Duplicate client model names must be resolved before saving',
       emptyAliasSummary: 'Enabled aliases without a client name must be completed before saving',
       locateFirstInvalid: 'Clear search and locate the first issue',
+      claudeAdapter: 'Claude adapter',
+      claudeAdapterFor: 'Enable the Claude adapter for {id}',
+      claudeAdapterConflict:
+        'Another model in this group already has the Claude adapter, which only one model can enable',
       pricingStatus: {
         pending: 'Pending',
         configured: 'Configured',

@@ -128,6 +128,10 @@ export default {
       conflictSummary: '保存前に重複するクライアントモデル名を解消してください',
       emptyAliasSummary: '有効な別名にクライアント名がないモデルを保存前に修正してください',
       locateFirstInvalid: '検索をクリアして最初の問題に移動',
+      claudeAdapter: 'Claude 適応',
+      claudeAdapterFor: '{id} の Claude 適応を有効にする',
+      claudeAdapterConflict:
+        'このグループでは既に別のモデルが Claude 適応を有効にしています。有効にできるのは 1 モデルだけです',
       pricingStatus: {
         pending: '未設定',
         configured: '設定済み',

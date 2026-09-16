@@ -155,6 +155,57 @@ func TestProjectModelsExposeContextSuffixAliasBase(t *testing.T) {
 	}
 }
 
+// 通配符别名不是可枚举的模型名：模型页的名称列表、上游关联明细与价格引用计数必须
+// 同时排除它。这三处共同定义 reference_count / associations.length / client_model_count，
+// 前端对这几个数字做单点交叉断言，任一处漏改都会让整个模型页渲染失败。
+func TestProjectModelsExcludeWildcardAliasFromNamesAndCounts(t *testing.T) {
+	t.Parallel()
+	fixture := newServiceFixture(t)
+	createPriceTestGroup(t, fixture.db, models.Group{
+		Name: "wildcard", ChannelID: string(channel.OpenAICompatible), Params: models.JSON(`{"base_url":"https://wildcard.example/v1"}`),
+		Models: models.JSON(`[{"id":"deepseek-flash","aliases":["claude-*[1m]","claude-opus-5"]}]`), Overrides: models.JSON(`{}`), Enabled: true,
+	})
+	mustEnsureInitialPrices(t, fixture)
+
+	all, err := fixture.service.ListProjectModels(t.Context(), ProjectModelListQuery{
+		GroupStatus: ProjectModelGroupStatusAll, PricingStatus: ProjectModelPricingStatusAll, Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := make(map[string]bool, len(all.Items))
+	for _, item := range all.Items {
+		if strings.Contains(item.ClientModel, "*") {
+			t.Fatalf("model page leaked pattern %q: %#v", item.ClientModel, all.Items)
+		}
+		listed[item.ClientModel] = true
+	}
+	// 只有上游 ID 与具体别名两条；claude-*[1m] 与它派生的 claude-* 都不出现。
+	if len(listed) != 2 || !listed["deepseek-flash"] || !listed["claude-opus-5"] {
+		t.Fatalf("client model overview = %#v", all.Items)
+	}
+	if all.Summary.ClientModelCount != 2 {
+		t.Fatalf("summary = %#v, want 2 client-visible names", all.Summary)
+	}
+
+	detail, err := fixture.service.GetUpstreamModelDetail(t.Context(), all.Items[0].UpstreamModels[0].Price.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	associated := make(map[string]bool, len(detail.Associations))
+	for _, association := range detail.Associations {
+		if strings.Contains(association.ClientModel, "*") {
+			t.Fatalf("association leaked pattern %q: %#v", association.ClientModel, detail.Associations)
+		}
+		associated[association.ClientModel] = true
+	}
+	// 计数契约：三个数字必须互相自洽，且都不计入模式名。
+	if len(detail.Associations) != 2 || detail.Price.ReferenceCount != len(detail.Associations) ||
+		detail.ClientModelCount != len(associated) || detail.GroupCount != 1 {
+		t.Fatalf("detail counts = %#v (associations %d)", detail, len(detail.Associations))
+	}
+}
+
 func TestProjectModelsHTTPScopesAccessKeyFiltersAndRelationships(t *testing.T) {
 	t.Parallel()
 	initControlI18n(t)

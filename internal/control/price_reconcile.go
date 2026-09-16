@@ -127,8 +127,11 @@ func buildPriceReferenceSnapshot(groups []models.Group) (priceReferenceSnapshot,
 					groupIDs:        make(map[uint]struct{}),
 				}
 			}
-			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名。
-			for _, clientModel := range state.RoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
+			// 与模型页、/v1/models 同口径：后缀别名派生的基名也是一个可用模型名，
+			// 通配符别名则两边都不计入。本函数产出的 associationKeys 就是
+			// reference_count，它必须与 GetUpstreamModelDetail 的 associations 逐条
+			// 对齐，两处只能用同一个名称集合。
+			for _, clientModel := range state.ConcreteRoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases}) {
 				reference.associationKeys[priceAssociationKey(group.ID, clientModel)] = struct{}{}
 			}
 			reference.groupIDs[group.ID] = struct{}{}

@@ -33,6 +33,7 @@ import QueryFeedback from '@/components/ui/QueryFeedback.vue'
 import SkeletonSurface from '@/components/ui/SkeletonSurface.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { formatISOInstant, formatInteger, formatLocalInstant, formatPercent } from '@/lib/format'
+import { concreteModelNames } from '@/lib/model-name'
 
 import { isValidMonitorText, normalizeMonitorText } from './filter-validation'
 import InspectorForm from './InspectorForm.vue'
@@ -102,8 +103,10 @@ const protocolOptions = computed(() => [
   ...enabledDataProtocols.map((value) => ({ value, label: value })),
 ])
 const configuredModels = computed(() =>
-  [...new Set((groupOptionsQuery.data.value ?? []).flatMap((group) => group.models))].sort(
-    (left, right) => left.localeCompare(right),
+  concreteModelNames(
+    [...new Set((groupOptionsQuery.data.value ?? []).flatMap((group) => group.models))].sort(
+      (left, right) => left.localeCompare(right),
+    ),
   ),
 )
 const missingModelOption = computed(

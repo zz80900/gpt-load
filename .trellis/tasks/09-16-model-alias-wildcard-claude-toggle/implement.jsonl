@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/model-name-contract.md", "reason": "本任务的核心契约文档：三套名称集合（ExternalModelNames / RoutableModelNames / 分组选项候选集）的分工、上下文后缀派生规则、三处冲突检测为何不能口径一致、以及模型页计数契约与回归基线。第 3 节「路由索引是唯一注册点」与第 7 节的 Wrong 示例（禁止在查找路径加兜底）都与本特性的唯一可行设计冲突，必须在本任务中一并修订——先读懂原文才知道要改哪几句。"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "新增索引结构、纯函数与过滤器的实现规范：命名、注释语言、错误处理与测试要求。本任务在后端新增三处纯函数与一个快照字段，必须符合既有质量约定。"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "MODEL_NAME_CONFLICT 与 ErrValidation 的构造与包装规则。本任务复用既有冲突报错路径（有意不新增错误类型），需要确认错误包装层不会把模式冲突压成不可定位的 ErrInternalServer。"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "决定新增代码落在 internal/modelname（纯函数）、internal/state（索引结构）、internal/scheduler（查找兜底）还是 internal/control（展示层过滤）；以及为何模式匹配不能放在 state 包（import cycle）。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务横跨 Go 后端与 Vue 前端，且 client_models 与模型页计数两处都有前端单点硬断言。该指南给出跨层契约的核对方法，是评审门 C 的依据。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务最容易出的问题是同一规则被复制成多份（模式判定、目标排序比较器、Claude 适配常量、名称过滤）。该指南用于自查：每个概念是否只有一个定义点。"}

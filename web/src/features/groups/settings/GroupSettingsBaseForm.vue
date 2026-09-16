@@ -11,6 +11,7 @@ import type {
 import type { ChannelFieldDto } from '@/app/resources/channels'
 import GroupTestFields from '../GroupTestFields.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import { concreteModelNames } from '@/lib/model-name'
 import { isValidPriceMultiplier } from '@/lib/price-multiplier'
 
 const props = defineProps<{
@@ -46,9 +47,10 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const isSubscription = computed(() => props.connectionType === 'subscription')
 // 验活直接把该值当成上游模型 ID 使用，所以候选取 id 而不是可能被别名替换的 client_model。
+// 别名只是展示用的备注，通配符别名（如 claude-*[1m]）在这里没有信息量，过滤掉。
 const validationModelOptions = computed(() =>
   [...props.models]
-    .map(({ id, aliases }) => ({ id, alias: aliases.join('、') }))
+    .map(({ id, aliases }) => ({ id, alias: concreteModelNames(aliases).join('、') }))
     .sort((left, right) => left.id.localeCompare(right.id)),
 )
 const weightValid = computed(

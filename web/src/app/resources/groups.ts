@@ -31,6 +31,7 @@ import { controlQueryKeys, normalizeGroupCollectionFilters } from '@/app/query-k
 import { projectChannelID } from '@/app/resources/channels'
 import { projectModelCandidate, type ModelCandidate } from '@/app/resources/providers'
 import { isJSONSafeNumber } from '@/lib/json-number'
+import { concreteModelNames } from '@/lib/model-name'
 
 import {
   assertNoSecretLikeFields,
@@ -997,7 +998,9 @@ export function cacheGroupModels(
     summary === undefined ? summary : { ...summary, model_count: models.total },
   )
   // 模型选项展开为全部对外名称（ID + 别名），与后端 group options 的口径一致。
-  const clientModels = models.items.flatMap(({ client_models: names }) => names)
+  // 通配符别名要过滤掉：后端 options 接口用 ConcreteModelNames 排除了模式，这里若
+  // 原样透传，重新缓存之后通配符又会漏回模型选择器。
+  const clientModels = concreteModelNames(models.items.flatMap(({ client_models: names }) => names))
   queryClient.setQueryData<GroupOptionDto[]>(controlQueryKeys.groups.options(), (options) =>
     options?.map((option) =>
       option.id === groupID ? { ...option, models: clientModels } : option,

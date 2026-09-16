@@ -155,6 +155,19 @@ Embeddings 首期只在 OpenAI、OpenRouter 和 OpenAI Compatible API Key 渠道
 
 Rerank 使用独立的 `rerank` 协议，在 OpenAI Compatible、New API、GPT-Load API Key 渠道支持 `POST /v1/rerank`。请求使用 `model`、`query` 和纯文本 `documents` 数组，可传 `top_n`、`return_documents` 等上游参数；不支持流式、订阅渠道或协议互转。OpenAI Compatible 的 Base URL 是完整 API 前缀（如 `https://host/v1`），New API / GPT-Load 使用网关根地址；上游必须提供兼容 Rerank 接口。未设置协议过滤器的 AccessKey 也会获得 Rerank 访问能力。仅有 `search_units` 等非 Token 计量时保持未计价，不将其视为 Token 或免费请求。
 
+### 模型名称与别名
+
+分组中的每个模型都有一个上游 ID，并可配置任意多个对外别名。客户端用其中任意一个名称请求，都会路由到同一个上游模型。
+
+- **上下文后缀**：别名写作 `xxxx[1M]` 时，Claude Code 这类客户端能从 `/v1/models` 读到 `xxxx[1M]` 并启用大上下文窗口，而它实际发出的请求名是 `xxxx`。两个名称都可路由，因此后缀不产生额外成本。
+- **通配符**：别名中含 `*` 即按模式处理，`*` 匹配任意长度（含空）的字节序列。给上游 `deepseek-flash` 配别名 `claude-*[1m]` 后，客户端请求 `claude-opus-5`、`claude-sonnet-5`、`claude-opus-5[1m]` 都会路由到它。
+- **优先级**：精确名称始终优先于模式；多个模式都能匹配时，字面前缀更长者优先（`claude-sonnet-*` 优先于 `claude-*`）。
+- **可见性**：模式不会出现在 `/v1/models`，也不会出现在分组模型候选、模型页、访问密钥模型筛选中。模式是路由规则，不是模型名。
+- **冲突**：同一个分组内，两个不同的上游 ID 不能认领同一个别名（含同一个模式），保存会被拒绝并报 `MODEL_NAME_CONFLICT`。
+- **已知边界**：单独一个 `*` 也是合法别名，它会接住该分组内所有没有精确匹配的请求名——未知模型因此不再返回 503，而是走到该上游。另外，升级前就已存在的 `*` 别名以前是无效配置（匹配不到任何请求），升级后会真的开始路由。
+
+**Claude 适配开关**：分组详情页的模型表格在「对外别名」与「定价」之间有一列「Claude 适配」。打开它等价于为该模型添加别名 `claude-*[1m]`，把所有 Claude 模型名路由到该上游；关闭则移除该别名。该别名本身不在别名框中显示，由开关管理。同一个分组只能有一个模型启用。
+
 ### 内置渠道
 
 - **官方与云平台**：OpenAI、Anthropic、Gemini、xAI、Azure OpenAI、AWS Bedrock、Google Vertex AI

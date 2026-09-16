@@ -125,6 +125,9 @@ export default {
       nameConflict: '对外名称“{name}”重复',
       conflictSummary: '存在重复的对外模型名称，修正后才能保存',
       locateFirstInvalid: '清除搜索并定位首个问题',
+      claudeAdapter: 'Claude 适配',
+      claudeAdapterFor: '为 {id} 启用 Claude 适配',
+      claudeAdapterConflict: '本分组内已有模型启用 Claude 适配，同一分组只能启用一个',
       pricingStatus: {
         pending: '待配置',
         configured: '已配置',

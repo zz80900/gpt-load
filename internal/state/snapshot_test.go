@@ -100,6 +100,21 @@ func TestRoutableModelNamesExpandsContextSuffixBase(t *testing.T) {
 			model: ModelConfig{ID: "xxxx[1M]", Aliases: []string{"xxxx"}},
 			want:  []string{"xxxx[1M]", "xxxx"},
 		},
+		{
+			name:  "wildcard alias is kept verbatim",
+			model: ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-*"}},
+			want:  []string{"deepseek-flash", "claude-*"},
+		},
+		{
+			name:  "wildcard alias derives its suffix-stripped pattern",
+			model: ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"}},
+			want:  []string{"deepseek-flash", "claude-*[1m]", "claude-*"},
+		},
+		{
+			name:  "bare wildcard is kept verbatim",
+			model: ModelConfig{ID: "deepseek-flash", Aliases: []string{"*"}},
+			want:  []string{"deepseek-flash", "*"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -122,6 +137,8 @@ func TestRoutableModelNamesMatchesExternalNamesWithoutSuffix(t *testing.T) {
 		{ID: "plain"},
 		{ID: "  padded  ", Aliases: []string{"  public  ", "", "public", "plain"}},
 		{ID: "bracketed", Aliases: []string{"bracketed[2M]", "xx[128K]yy"}},
+		// 不带上下文后缀的通配符别名同样是恒等项：模式不会让两个集合产生差异。
+		{ID: "deepseek-flash", Aliases: []string{"claude-*", "gpt-*"}},
 		{},
 	}
 	for _, model := range models {
@@ -172,6 +189,265 @@ func TestCompileIndexesContextSuffixAliasBase(t *testing.T) {
 		if targets, exists := byModel[NoModelRouteKey]; exists {
 			t.Fatalf("%s registered an empty model key: %#v", indexName, targets)
 		}
+	}
+}
+
+// 模式必须进独立的模式索引，不得成为精确索引的键：精确索引的键会被 /v1/models 直接
+// 枚举成模型列表，把 claude-* 放进去等于向客户端广播一个不存在的模型名。
+func TestCompileSeparatesPatternsFromExactKeys(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := Compile(CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{
+					{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]", "exact-alias"}},
+				}, Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	for indexName, index := range map[string]ExecutionCandidateIndex{
+		"candidates":    snapshot.ExecutionCandidates,
+		"route catalog": snapshot.ExecutionRouteCatalog,
+	} {
+		byModel := index[protocol.Anthropic][execution.OperationChatCompletion]
+		for _, name := range []string{"claude-*[1m]", "claude-*"} {
+			if targets, exists := byModel[name]; exists {
+				t.Fatalf("%s registered pattern %q as an exact key: %#v", indexName, name, targets)
+			}
+		}
+		for name, wantUpstream := range map[string]string{
+			"deepseek-flash": "deepseek-flash",
+			"exact-alias":    "deepseek-flash",
+		} {
+			targets := byModel[name]
+			if len(targets) != 1 || targets[0].UpstreamModelID != wantUpstream {
+				t.Fatalf("%s exact targets for %q = %#v, want upstream %q", indexName, name, targets, wantUpstream)
+			}
+		}
+	}
+
+	for indexName, index := range map[string]ModelPatternIndex{
+		"candidates":    snapshot.ExecutionPatterns,
+		"route catalog": snapshot.ExecutionRoutePatterns,
+	} {
+		patterns := index[protocol.Anthropic][execution.OperationChatCompletion]
+		if len(patterns) != 2 {
+			t.Fatalf("%s patterns = %#v, want 2 entries", indexName, patterns)
+		}
+		for _, entry := range patterns {
+			if len(entry.Targets) != 1 || entry.Targets[0].UpstreamModelID != "deepseek-flash" {
+				t.Fatalf("%s pattern %q targets = %#v", indexName, entry.Pattern, entry.Targets)
+			}
+		}
+		// claude-*[1m] 与 claude-* 的字面前缀长度分别是 8 与 7，因此前者更具体、排在前面。
+		if patterns[0].Pattern != "claude-*[1m]" || patterns[1].Pattern != "claude-*" {
+			t.Fatalf("%s pattern order = %#v, want [claude-*[1m] claude-*]", indexName, patterns)
+		}
+	}
+}
+
+// 模式不与精确名构成冲突，也不与另一个不同的重叠模式构成冲突：冲突判定按精确字符串
+// 认领，而这三者字符串互不相等。请求最终走哪条由「精确优先 + 模式特异性」决定，
+// 因此共存是安全的，把它判成冲突会否掉本特性存在的理由。
+func TestCompileAcceptsPatternsAlongsideExactNamesAndOtherPatterns(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := Compile(CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{
+					{ID: "exact-owner", Aliases: []string{"claude-sonnet-5"}},
+					{ID: "broad", Aliases: []string{"claude-*"}},
+					{ID: "specific", Aliases: []string{"claude-sonnet-*"}},
+				}, Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	byModel := snapshot.ExecutionCandidates[protocol.Anthropic][execution.OperationChatCompletion]
+	if targets := byModel["claude-sonnet-5"]; len(targets) != 1 || targets[0].UpstreamModelID != "exact-owner" {
+		t.Fatalf("exact targets = %#v, want upstream exact-owner", targets)
+	}
+	for _, name := range []string{"claude-*", "claude-sonnet-*"} {
+		if targets, exists := byModel[name]; exists {
+			t.Fatalf("pattern %q leaked into the exact index: %#v", name, targets)
+		}
+	}
+	patterns := snapshot.ExecutionPatterns[protocol.Anthropic][execution.OperationChatCompletion]
+	if len(patterns) != 2 {
+		t.Fatalf("patterns = %#v, want two coexisting patterns", patterns)
+	}
+}
+
+// 同一个模式串跨分组出现时聚合为一条：与精确名称跨分组聚合的行为一致，否则同一模式
+// 会被重复认领，放大该目标的候选权重。
+func TestCompileAggregatesPatternsAcrossGroups(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := Compile(CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "upstream-a", Aliases: []string{"claude-*"}}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 2, Name: "two", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "upstream-b", Aliases: []string{"claude-*"}}}, Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	patterns := snapshot.ExecutionPatterns[protocol.Anthropic][execution.OperationChatCompletion]
+	if len(patterns) != 1 {
+		t.Fatalf("patterns = %#v, want a single aggregated entry", patterns)
+	}
+	targets := patterns[0].Targets
+	if len(targets) != 2 || targets[0].UpstreamModelID != "upstream-a" || targets[1].UpstreamModelID != "upstream-b" {
+		t.Fatalf("aggregated targets = %#v, want upstream-a then upstream-b", targets)
+	}
+}
+
+// 裁决顺序必须只由配置内容决定：打乱分组顺序后模式序列必须逐项相同。
+func TestCompileOrdersPatternsBySpecificityRegardlessOfGroupOrder(t *testing.T) {
+	t.Parallel()
+
+	compile := func(groups []GroupConfig) []ModelPattern {
+		t.Helper()
+		snapshot, err := Compile(CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: groups})
+		if err != nil {
+			t.Fatalf("Compile() error = %v", err)
+		}
+		return snapshot.ExecutionPatterns[protocol.Anthropic][execution.OperationChatCompletion]
+	}
+
+	broad := GroupConfig{ConnectionType: "api_key", ID: 1, Name: "broad", ChannelID: channel.Anthropic,
+		Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "upstream-broad", Aliases: []string{"claude-*"}}}, Enabled: true}
+	specific := GroupConfig{ConnectionType: "api_key", ID: 2, Name: "specific", ChannelID: channel.Anthropic,
+		Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "upstream-specific", Aliases: []string{"claude-sonnet-*"}}}, Enabled: true}
+
+	forward := compile([]GroupConfig{broad, specific})
+	reversed := compile([]GroupConfig{specific, broad})
+	if !reflect.DeepEqual(forward, reversed) {
+		t.Fatalf("pattern order depends on group order:\nforward  = %#v\nreversed = %#v", forward, reversed)
+	}
+	if len(forward) != 2 || forward[0].Pattern != "claude-sonnet-*" || forward[1].Pattern != "claude-*" {
+		t.Fatalf("pattern order = %#v, want [claude-sonnet-* claude-*]", forward)
+	}
+}
+
+// Manager.Matches 对整个快照做 reflect.DeepEqual：模式索引的构建必须确定，否则每次
+// reconcile 都会判定为「配置已变更」，表现为随机的 503 configuration_changed。
+func TestCompilePatternIndexIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	input := CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "one", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "upstream-a", Aliases: []string{"claude-*", "gpt-*"}}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 2, Name: "two", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "upstream-b", Aliases: []string{"claude-sonnet-*"}}}, Enabled: true},
+			{ConnectionType: "api_key", ID: 3, Name: "three", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "upstream-c", Aliases: []string{"claude-*-5", "*-sonnet"}}}, Enabled: true},
+		},
+	}
+	first, err := Compile(input)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	for attempt := range 8 {
+		next, err := Compile(input)
+		if err != nil {
+			t.Fatalf("Compile() attempt %d error = %v", attempt, err)
+		}
+		if !reflect.DeepEqual(first.ExecutionPatterns, next.ExecutionPatterns) {
+			t.Fatalf("attempt %d produced a different candidate pattern index", attempt)
+		}
+		if !reflect.DeepEqual(first.ExecutionRoutePatterns, next.ExecutionRoutePatterns) {
+			t.Fatalf("attempt %d produced a different catalog pattern index", attempt)
+		}
+	}
+}
+
+// 巡检目录对禁用分组也注册（Compile 在 Enabled 判断之前调用），数据面候选只注册启用
+// 分组。两个模式索引必须保持同样的分野，否则路由巡检查不出数据面查得到的路由。
+func TestCompilePatternsFollowEnabledSplitBetweenIndexes(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := Compile(CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "disabled", ChannelID: channel.Anthropic, Params: json.RawMessage(`{}`),
+				Models: []ModelConfig{{ID: "upstream-disabled", Aliases: []string{"claude-*"}}}, Enabled: false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	if patterns := snapshot.ExecutionPatterns[protocol.Anthropic][execution.OperationChatCompletion]; len(patterns) != 0 {
+		t.Fatalf("candidate patterns = %#v, want none for a disabled group", patterns)
+	}
+	catalog := snapshot.ExecutionRoutePatterns[protocol.Anthropic][execution.OperationChatCompletion]
+	if len(catalog) != 1 || catalog[0].Pattern != "claude-*" {
+		t.Fatalf("catalog patterns = %#v, want the disabled group's pattern", catalog)
+	}
+	if targets := snapshot.ExecutionCandidates[protocol.Anthropic][execution.OperationChatCompletion]; len(targets) != 0 {
+		t.Fatalf("candidate exact keys = %#v, want none for a disabled group", targets)
+	}
+}
+
+// 无通配符的配置必须逐项不变：模式索引为空，两个具体名称集合与既有集合逐项相等。
+func TestConcreteModelNamesDropsOnlyPatterns(t *testing.T) {
+	t.Parallel()
+
+	models := []ModelConfig{
+		{ID: "provider-a", Aliases: []string{"public", "secondary"}},
+		{ID: "deepseek-flash", Aliases: []string{"claude-*"}},
+		{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"}},
+		{ID: "plain"},
+		{},
+	}
+	for _, model := range models {
+		concrete := ConcreteModelNames(model)
+		for _, name := range concrete {
+			if strings.Contains(name, "*") {
+				t.Fatalf("ConcreteModelNames(%#v) leaked pattern %q", model, name)
+			}
+		}
+		concreteRoutable := ConcreteRoutableModelNames(model)
+		for _, name := range concreteRoutable {
+			if strings.Contains(name, "*") {
+				t.Fatalf("ConcreteRoutableModelNames(%#v) leaked pattern %q", model, name)
+			}
+		}
+		if len(concrete) > len(ExternalModelNames(model)) ||
+			len(concreteRoutable) > len(RoutableModelNames(model)) {
+			t.Fatalf("filter produced more names than its source for %#v", model)
+		}
+	}
+
+	// 无通配符时两个过滤器是恒等函数。
+	plain := ModelConfig{ID: "provider-a", Aliases: []string{"claude-opus-5", "public[1m]"}}
+	if got, want := ConcreteModelNames(plain), ExternalModelNames(plain); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ConcreteModelNames(%#v) = %#v, want %#v", plain, got, want)
+	}
+	if got, want := ConcreteRoutableModelNames(plain), RoutableModelNames(plain); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ConcreteRoutableModelNames(%#v) = %#v, want %#v", plain, got, want)
+	}
+
+	// 有通配符时只丢掉模式项，其余逐项保留且顺序不变。
+	wildcard := ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]", "public"}}
+	if got, want := ConcreteModelNames(wildcard), []string{"deepseek-flash", "public"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ConcreteModelNames(%#v) = %#v, want %#v", wildcard, got, want)
+	}
+	if got, want := ConcreteRoutableModelNames(wildcard), []string{"deepseek-flash", "public"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ConcreteRoutableModelNames(%#v) = %#v, want %#v", wildcard, got, want)
 	}
 }
 
@@ -429,6 +705,20 @@ func TestCompileRejectsInvalidCoreConfiguration(t *testing.T) {
 			name:    "explicit name conflicts with derived suffix name",
 			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "provider", Aliases: []string{"xxxx[1m]"}}, {ID: "xxxx"}}, Enabled: true}}},
 			wantErr: `duplicate external model "xxxx": model "provider" already claims it by stripping the context suffix from "xxxx[1m]"`,
+		},
+		{
+			// 同一个通配符模式被两个不同上游认领：路由结果会由候选排序而非配置决定，
+			// 必须拒绝。用户两个条目写的是同一个字符串，报错直接给出该字符串。
+			name:    "duplicate pattern across upstreams",
+			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "provider-a", Aliases: []string{"claude-*"}}, {ID: "provider-b", Aliases: []string{"claude-*"}}}, Enabled: true}}},
+			wantErr: `duplicate external model "claude-*"`,
+		},
+		{
+			// 撞名的一方是后缀派生出来的模式：用户从没写过 "claude-*"，报错必须指出它
+			// 由哪条别名派生，否则无从定位。
+			name:    "derived pattern conflicts with an explicit pattern",
+			input:   CompileInput{ChannelRegistry: channel.NewRegistry(), Groups: []GroupConfig{{ConnectionType: "api_key", ID: 1, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`), Models: []ModelConfig{{ID: "provider-a", Aliases: []string{"claude-*"}}, {ID: "provider-b", Aliases: []string{"claude-*[1m]"}}}, Enabled: true}}},
+			wantErr: `duplicate routed model "claude-*": model "provider-b" derives it from "claude-*[1m]"`,
 		},
 		{
 			name: "duplicate group id",

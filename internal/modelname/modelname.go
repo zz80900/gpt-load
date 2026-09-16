@@ -48,3 +48,66 @@ func Allows(allowed map[string]struct{}, name string) bool {
 	}
 	return false
 }
+
+// IsPattern 报告 name 是否为通配符模式。
+//
+// 判定只看是否含 '*'。模型名在本项目全程按字节精确比较，不存在需要转义的场景，
+// 因此不需要引入模式文法：识别到 '*' 就是模式，没有 '*' 就是普通名称。
+func IsPattern(name string) bool {
+	return strings.IndexByte(name, '*') >= 0
+}
+
+// Match 报告 name 是否被通配符模式 pattern 匹配。
+//
+// '*' 匹配任意长度（含空）的字节序列，可以出现任意多次；不含 '*' 的 pattern 退化为
+// 字符串相等。比较按字节进行，不做 Unicode 归一、不做大小写折叠——模型名在本项目
+// 全程区分大小写。
+//
+// 这是全项目唯一的模式匹配定义：路由查找、展示层过滤与测试都必须经由它，否则同一条
+// 模式在不同消费点会解析出不同结果。
+func Match(pattern, name string) bool {
+	if !IsPattern(pattern) {
+		return pattern == name
+	}
+	// 双指针回溯：star 记录最近一个 '*' 的下标，mark 记录该 '*' 当时吞到 name 的
+	// 哪个位置。失配时回退到这个 '*' 并让它多吞一个字节，因此无需递归、无需分配。
+	star := -1
+	mark := 0
+	patternIndex, nameIndex := 0, 0
+	for nameIndex < len(name) {
+		switch {
+		case patternIndex < len(pattern) && pattern[patternIndex] == '*':
+			star = patternIndex
+			mark = nameIndex
+			patternIndex++
+		case patternIndex < len(pattern) && pattern[patternIndex] == name[nameIndex]:
+			patternIndex++
+			nameIndex++
+		case star >= 0:
+			mark++
+			nameIndex = mark
+			patternIndex = star + 1
+		default:
+			return false
+		}
+	}
+	// name 已耗尽，剩余的 pattern 只有全是 '*' 才算匹配（'*' 可以吞掉空串）。
+	for patternIndex < len(pattern) && pattern[patternIndex] == '*' {
+		patternIndex++
+	}
+	return patternIndex == len(pattern)
+}
+
+// PatternSpecificity 返回模式的裁决度量：首个 '*' 之前的字面字节数，以及全部非 '*'
+// 字节数。
+//
+// 用于重叠模式的确定性裁决（更长的字面前缀意味着更具体：claude-sonnet-* 比 claude-*
+// 更具体；前缀相同时字面总数更多者更具体：claude-*-5 比 claude-* 更具体）。不含 '*'
+// 的名称不是模式，两项都返回名称长度，使调用方无需分支。
+func PatternSpecificity(pattern string) (prefixLen, literalCount int) {
+	index := strings.IndexByte(pattern, '*')
+	if index < 0 {
+		return len(pattern), len(pattern)
+	}
+	return index, len(pattern) - strings.Count(pattern, "*")
+}

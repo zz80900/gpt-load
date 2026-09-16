@@ -101,6 +101,12 @@ func ExternalModelNames(model ModelConfig) []string {
 // 派生名紧跟来源项（[id, id基名, 别名1, 别名1基名, ...]），使模型页成对展示；
 // 无后缀的项不产生派生名，因此无后缀配置下本函数与 ExternalModelNames 逐项相等。
 // 重复项只保留首次出现：id=xxxx 且别名=xxxx[1M] 时，派生基名与 id 同名，只注册一次。
+//
+// 含 '*' 的通配符别名以字面量出现在返回值里，也照常参与后缀派生（claude-*[1m] 会额外
+// 贡献 claude-*）。但本函数的返回值**不再等价于「精确查找能命中的键集合」**：模式的
+// 匹配集合是无穷的，无法枚举成索引键，它由 ModelPatternIndex 单独承接。调用方若需要
+// 「客户端能枚举出的具体名称」，必须用 ConcreteRoutableModelNames；写路径与编译期的
+// 冲突检测则需要本函数的完整集合，因为同名模式跨上游 ID 同样构成冲突。
 func RoutableModelNames(model ModelConfig) []string {
 	names := ExternalModelNames(model)
 	routable := make([]string, 0, 2*len(names))
@@ -121,6 +127,37 @@ func RoutableModelNames(model ModelConfig) []string {
 		routable = append(routable, base)
 	}
 	return routable
+}
+
+// ConcreteModelNames 返回可被枚举展示的具体模型名：ExternalModelNames 去掉通配符模式。
+//
+// 供「客户端可用名称」的展示面使用（分组选项候选集、首页名称聚合与客户端配置生成器）。
+// 不要把本函数的返回值用回 client_models：那个契约的形状是 [id, ...aliases]，前端对
+// 它逐项硬断言，模式必须以字面量出现在其中。
+func ConcreteModelNames(model ModelConfig) []string {
+	return withoutPatterns(ExternalModelNames(model))
+}
+
+// ConcreteRoutableModelNames 返回可枚举的具体可路由名：RoutableModelNames 去掉通配符模式。
+//
+// 模型页的名称列表、上游关联明细与价格引用计数都用它，三处必须同口径——它们共同定义
+// reference_count / associations.length / client_model_count，前端对这几个数字做单点
+// 交叉断言，任一处漏改都会让整个模型页渲染失败。
+func ConcreteRoutableModelNames(model ModelConfig) []string {
+	return withoutPatterns(RoutableModelNames(model))
+}
+
+// withoutPatterns 过滤含 '*' 的通配符模式。判定只经由 modelname.IsPattern，保证
+// 「什么算模式」在全项目只有一个定义。
+func withoutPatterns(names []string) []string {
+	concrete := make([]string, 0, len(names))
+	for _, name := range names {
+		if modelname.IsPattern(name) {
+			continue
+		}
+		concrete = append(concrete, name)
+	}
+	return concrete
 }
 
 // modelNameConflictError 生成跨条目重名错误。冲突名可能根本没在用户的配置文本里
@@ -209,6 +246,27 @@ const NoModelRouteKey = ""
 // operation, and external model. Resource operations use NoModelRouteKey.
 type ExecutionCandidateIndex map[protocol.Protocol]map[execution.Operation]map[string][]RouteTarget
 
+// ModelPattern 是一条通配符模式及其认领的全部目标。Pattern 保留原样模式串，
+// 供冲突报错与巡检展示使用。
+type ModelPattern struct {
+	Pattern string
+	Targets []RouteTarget
+}
+
+// ModelPatternIndex 按客户端协议与逻辑操作索引通配符模式。每个切片在构建期按特异性
+// 降序排定，因此查找是「首个命中即返回」，结果只由配置内容决定，与配置顺序、map
+// 遍历顺序无关。
+//
+// 模式必须与 ExecutionCandidateIndex 分开存放：后者的键会被 /v1/models 直接枚举成
+// 模型列表，把 claude-* 这样的模式放进去等于向客户端广播一个不存在且有歧义的模型名。
+// 而模式的匹配集合是无穷的，也无法在构建期展开成具体键。
+type ModelPatternIndex map[protocol.Protocol]map[execution.Operation][]ModelPattern
+
+// modelPatternBuilder 是 Compile 期间的模式聚合器。同一个模式串在多个分组里出现时
+// 必须合并成一条（与精确名称跨分组聚合的行为一致），因此先按模式串聚合，构建结束后
+// 再由 finalizeModelPatternIndex 转成排好序的 ModelPatternIndex。
+type modelPatternBuilder map[protocol.Protocol]map[execution.Operation]map[string]*ModelPattern
+
 type TimeoutConfig struct {
 	FirstByte  time.Duration
 	Request    time.Duration
@@ -278,15 +336,17 @@ type AccessKeyView struct {
 }
 
 type ConfigSnapshot struct {
-	Revision              uint64
-	Settings              RuntimeSettings
-	ExecutionCandidates   ExecutionCandidateIndex
-	ExecutionRouteCatalog ExecutionCandidateIndex
-	Groups                map[uint]GroupView
-	AccessKeysByHash      map[string]AccessKeyView
-	GroupCatalog          map[uint]GroupCatalogView
-	AccessKeysByID        map[uint]AccessKeyView
-	GlobalProxy           outboundproxy.Effective
+	Revision               uint64
+	Settings               RuntimeSettings
+	ExecutionCandidates    ExecutionCandidateIndex
+	ExecutionRouteCatalog  ExecutionCandidateIndex
+	ExecutionPatterns      ModelPatternIndex
+	ExecutionRoutePatterns ModelPatternIndex
+	Groups                 map[uint]GroupView
+	AccessKeysByHash       map[string]AccessKeyView
+	GroupCatalog           map[uint]GroupCatalogView
+	AccessKeysByID         map[uint]AccessKeyView
+	GlobalProxy            outboundproxy.Effective
 }
 
 func Compile(input CompileInput) (*ConfigSnapshot, error) {
@@ -313,6 +373,9 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 		GlobalProxy:           globalProxy,
 	}
 
+	patterns := make(modelPatternBuilder)
+	routePatterns := make(modelPatternBuilder)
+
 	for _, group := range input.Groups {
 		catalogView := GroupCatalogView{
 			ID: group.ID, Name: group.Name, Enabled: group.Enabled,
@@ -321,7 +384,9 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 			WeightManual:   cloneWeight(group.WeightManual),
 		}
 		snapshot.GroupCatalog[group.ID] = catalogView
-		if err := appendExecutionTargets(snapshot.ExecutionRouteCatalog, input.ChannelRegistry, group); err != nil {
+		if err := appendExecutionTargets(
+			snapshot.ExecutionRouteCatalog, routePatterns, input.ChannelRegistry, group,
+		); err != nil {
 			return nil, err
 		}
 		resolved, err := ResolveGroupRuntimeSettings(runtimeSettings, group.Settings)
@@ -366,7 +431,9 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 		view.Params = params.CanonicalJSON()
 		view.ResolvedTarget = cloneResolvedTarget(target)
 		view.ClientProtocols = append([]protocol.Protocol(nil), descriptor.ClientProtocols...)
-		if err := appendExecutionTargets(snapshot.ExecutionCandidates, input.ChannelRegistry, group); err != nil {
+		if err := appendExecutionTargets(
+			snapshot.ExecutionCandidates, patterns, input.ChannelRegistry, group,
+		); err != nil {
 			return nil, err
 		}
 		snapshot.Groups[group.ID] = view
@@ -381,6 +448,10 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 
 	sortExecutionRouteIndex(snapshot.ExecutionCandidates)
 	sortExecutionRouteIndex(snapshot.ExecutionRouteCatalog)
+	// 模式索引在构建期完成排序与去重后即不可变：快照发布后数据面只持读锁并发访问，
+	// 且 Manager.Matches 对整个快照做 reflect.DeepEqual。
+	snapshot.ExecutionPatterns = finalizeModelPatternIndex(patterns)
+	snapshot.ExecutionRoutePatterns = finalizeModelPatternIndex(routePatterns)
 	return snapshot, nil
 }
 
@@ -431,6 +502,7 @@ type modelRegistration struct {
 
 func appendExecutionTargets(
 	index ExecutionCandidateIndex,
+	patterns modelPatternBuilder,
 	registry *channel.Registry,
 	group GroupConfig,
 ) error {
@@ -500,10 +572,19 @@ func appendExecutionTargets(
 						return fmt.Errorf("compile group %d channel has no route mode for %q/%q model %q",
 							group.ID, clientProtocol, operation, registration.upstreamID)
 					}
-					appendExecutionTarget(index, clientProtocol, operation, registration.name, RouteTarget{
+					routeTarget := RouteTarget{
 						GroupID: group.ID, UpstreamModelID: registration.upstreamID,
 						Mode: modelMode, ResolvedTarget: cloneResolvedTarget(target),
-					})
+					}
+					// 模式与具体名称分流：模式的可匹配集合是无穷的，无法在构建期展开成
+					// 索引键；而精确索引的键会被 /v1/models 直接枚举成模型列表，把
+					// claude-* 放进去等于向客户端广播一个不存在的模型名。分流谓词只有
+					// 一个（modelname.IsPattern），两者不可能同时命中。
+					if modelname.IsPattern(registration.name) {
+						appendModelPattern(patterns, clientProtocol, operation, registration.name, routeTarget)
+						continue
+					}
+					appendExecutionTarget(index, clientProtocol, operation, registration.name, routeTarget)
 				}
 			default:
 				return fmt.Errorf("compile group %d channel has unsupported routable operation %q", group.ID, operation)
@@ -532,9 +613,44 @@ func appendExecutionTarget(
 	)
 }
 
+// appendModelPattern 把一个目标登记到模式聚合器下的对应模式串。同一模式串在多个分组
+// 里出现时聚合到同一条目，与精确名称跨分组聚合的行为一致。
+func appendModelPattern(
+	builder modelPatternBuilder,
+	clientProtocol protocol.Protocol,
+	operation execution.Operation,
+	pattern string,
+	target RouteTarget,
+) {
+	if builder[clientProtocol] == nil {
+		builder[clientProtocol] = make(map[execution.Operation]map[string]*ModelPattern)
+	}
+	if builder[clientProtocol][operation] == nil {
+		builder[clientProtocol][operation] = make(map[string]*ModelPattern)
+	}
+	entry, exists := builder[clientProtocol][operation][pattern]
+	if !exists {
+		entry = &ModelPattern{Pattern: pattern}
+		builder[clientProtocol][operation][pattern] = entry
+	}
+	entry.Targets = append(entry.Targets, target)
+}
+
 func cloneResolvedTarget(target channel.ResolvedTarget) channel.ResolvedTarget {
 	target.TargetConfig = append(json.RawMessage(nil), target.TargetConfig...)
 	return target
+}
+
+// lessRouteTarget 是全项目唯一的目标优先级定义：原生路由优先，其后按分组 ID、上游
+// 模型 ID 升序。精确索引与模式索引共用它，避免两条路径的目标排序分叉。
+func lessRouteTarget(left, right RouteTarget) bool {
+	if left.Mode != right.Mode {
+		return left.Mode == channel.RouteNative
+	}
+	if left.GroupID != right.GroupID {
+		return left.GroupID < right.GroupID
+	}
+	return left.UpstreamModelID < right.UpstreamModelID
 }
 
 func sortExecutionRouteIndex(index ExecutionCandidateIndex) {
@@ -542,18 +658,54 @@ func sortExecutionRouteIndex(index ExecutionCandidateIndex) {
 		for _, byModel := range byOperation {
 			for model := range byModel {
 				sort.Slice(byModel[model], func(i, j int) bool {
-					left, right := byModel[model][i], byModel[model][j]
-					if left.Mode != right.Mode {
-						return left.Mode == channel.RouteNative
-					}
-					if left.GroupID != right.GroupID {
-						return left.GroupID < right.GroupID
-					}
-					return left.UpstreamModelID < right.UpstreamModelID
+					return lessRouteTarget(byModel[model][i], byModel[model][j])
 				})
 			}
 		}
 	}
+}
+
+// finalizeModelPatternIndex 把构建期的聚合器转成不可变的查找索引：每个
+// (协议, 操作) 下的模式按特异性降序排定，因此查找是「首个命中即返回」，且结果只由
+// 配置内容决定，与配置顺序、map 遍历顺序无关。
+//
+// 排序必须在构建期完成：快照发布后数据面只持读锁并发访问，请求路径不做排序与分配；
+// 且 Manager.Matches 用 reflect.DeepEqual 比较整个快照，构建期若依赖 map 迭代顺序，
+// 每次比对都会判定为「配置已变更」，表现为随机的 503 configuration_changed。
+func finalizeModelPatternIndex(builder modelPatternBuilder) ModelPatternIndex {
+	index := make(ModelPatternIndex, len(builder))
+	for clientProtocol, byOperation := range builder {
+		index[clientProtocol] = make(map[execution.Operation][]ModelPattern, len(byOperation))
+		for operation, byPattern := range byOperation {
+			patterns := make([]ModelPattern, 0, len(byPattern))
+			for _, entry := range byPattern {
+				sort.Slice(entry.Targets, func(i, j int) bool {
+					return lessRouteTarget(entry.Targets[i], entry.Targets[j])
+				})
+				patterns = append(patterns, *entry)
+			}
+			sort.Slice(patterns, func(i, j int) bool {
+				return lessModelPattern(patterns[i].Pattern, patterns[j].Pattern)
+			})
+			index[clientProtocol][operation] = patterns
+		}
+	}
+	return index
+}
+
+// lessModelPattern 定义重叠模式的裁决顺序：字面前缀更长者优先（claude-sonnet-* 比
+// claude-* 更具体），前缀等长时字面字符更多者优先（claude-*-5 比 claude-* 更具体），
+// 仍相同时按字节序取小以保证全序。
+func lessModelPattern(left, right string) bool {
+	leftPrefix, leftLiterals := modelname.PatternSpecificity(left)
+	rightPrefix, rightLiterals := modelname.PatternSpecificity(right)
+	if leftPrefix != rightPrefix {
+		return leftPrefix > rightPrefix
+	}
+	if leftLiterals != rightLiterals {
+		return leftLiterals > rightLiterals
+	}
+	return left < right
 }
 
 func validateCompileInput(input CompileInput) error {

@@ -120,9 +120,64 @@ export function readModelNameConflicts(value: unknown): ModelNameConflict[] {
 }
 
 /**
+ * 「Claude 适配」开关写入的别名。
+ *
+ * 后端把它当作普通通配符别名处理（'*' 匹配任意长度，精确匹配优先），因此不存在需要
+ * 与之对齐的后端常量：这里就是该字符串的唯一来源。
+ */
+export const claudeAdapterAlias = 'claude-*[1m]'
+
+/**
+ * 视为「已启用 Claude 适配」的别名。
+ *
+ * 上下文后缀 [1M] 与 [1m] 在服务端是等价的两个后缀（见 ContextSuffixes），用户在别名
+ * 框里手输大写形态完全可能，因此两种写法都认；写入时一律用规范形态 claudeAdapterAlias。
+ */
+const claudeAdapterAliases: readonly string[] = [claudeAdapterAlias, 'claude-*[1M]']
+
+/** 是否为 Claude 适配别名。展示、隐藏、回写、冲突呈现都只经由这个判定。 */
+export function isClaudeAdapterAlias(alias: string): boolean {
+  return claudeAdapterAliases.includes(alias)
+}
+
+/** 该模型是否已启用 Claude 适配。开关状态完全由别名推导，不额外存储。 */
+export function hasClaudeAdapter(aliases: readonly string[]): boolean {
+  return aliases.some(isClaudeAdapterAlias)
+}
+
+/**
+ * 别名输入框与表格搜索应该展示的别名：只隐藏 Claude 适配常量。
+ *
+ * 刻意不隐藏一般通配符别名：用户手输的 gpt-* 若在输入框里「输入即消失」，既看不到也
+ * 删不掉，而它仍然会被保存下来。
+ */
+export function visibleAliases(aliases: readonly string[]): string[] {
+  return aliases.filter((alias) => !isClaudeAdapterAlias(alias))
+}
+
+/**
+ * 按开关状态重写别名列表：开启时补齐规范形态（若已有大写形态则原样保留，不制造重复），
+ * 关闭时移除全部形态。
+ *
+ * 始终返回新数组——GroupModelsTab 的 saved 与 draft 共享同一个 aliases 数组引用，就地
+ * 改写会污染脏检查基线，使「放弃修改」无法恢复。
+ */
+export function withClaudeAdapter(aliases: readonly string[], enabled: boolean): string[] {
+  if (!enabled) {
+    return aliases.filter((alias) => !isClaudeAdapterAlias(alias))
+  }
+  if (hasClaudeAdapter(aliases)) {
+    return [...aliases]
+  }
+  return [...aliases, claudeAdapterAlias]
+}
+
+/**
  * 规范化别名列表：逐项 trim、丢弃空项与等于模型 ID 的项、按首次出现去重（大小写敏感的
  * 精确比较）。必须与服务端 normalizeModelAliases 同规则，否则前端判为合法的配置会被
  * 服务端拒绝，用户会看到反复重试仍保存失败。
+ *
+ * 通配符别名不做形态判断，原样通过：它是普通别名，展开与过滤都发生在服务端与其他展示点。
  */
 export function normalizeAliases(values: readonly string[], id: string): string[] {
   const trimmedID = id.trim()

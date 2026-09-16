@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -506,6 +507,169 @@ func TestUpdateGroupModelsRoutesContextSuffixAliasBase(t *testing.T) {
 	if stored := loadCreatedGroupModels(t, fixture, created.GroupID); !reflect.DeepEqual(stored, wantModels) {
 		t.Fatalf("rejected write changed stored models = %#v", stored)
 	}
+}
+
+// 通配符别名的端到端约束：配置与 client_models 里保持字面量（不展开、不落派生名），
+// 精确索引里不出现任何含 '*' 的键，模式进独立索引，候选选择器里看不到模式。
+func TestUpdateGroupModelsKeepsWildcardAliasLiteralAndOutOfExactIndex(t *testing.T) {
+	t.Parallel()
+	fixture := newServiceFixture(t)
+	mustEnsureInitialPrices(t, fixture)
+	created, err := fixture.service.CreateGroup(t.Context(), GroupCreateRequest{
+		ChannelID: channel.OpenAICompatible,
+		Params:    json.RawMessage(`{"base_url":"https://wildcard-alias.example.com/v1"}`),
+		Models: optionalGroupModels{Set: true, Values: []GroupModel{
+			{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"}},
+			{ID: "exact-owner", Aliases: []string{"claude-sonnet-5"}},
+		}},
+		Credentials: "sk-wildcard-alias", ConnectionType: "api_key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantModels := []GroupModel{
+		{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"}},
+		{ID: "exact-owner", Aliases: []string{"claude-sonnet-5"}},
+	}
+
+	// client_models 仍是 [id, ...aliases]，通配符以字面量出现：展开或过滤都会触发
+	// 前端 groups.ts 对这份响应的逐项硬断言。
+	want := GroupModelsResponse{
+		Items: []GroupModelResponse{
+			{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"},
+				ClientModels: []string{"deepseek-flash", "claude-*[1m]"}, PricingStatus: PricingStatusPending},
+			{ID: "exact-owner", Aliases: []string{"claude-sonnet-5"},
+				ClientModels: []string{"exact-owner", "claude-sonnet-5"}, PricingStatus: PricingStatusPending},
+		},
+		Total:   2,
+		Pending: 2,
+	}
+	got, err := fixture.service.GetGroupModels(t.Context(), created.GroupID)
+	if err != nil {
+		t.Fatalf("GetGroupModels() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("models response = %#v, want %#v", got, want)
+	}
+	if stored := loadCreatedGroupModels(t, fixture, created.GroupID); !reflect.DeepEqual(stored, wantModels) {
+		t.Fatalf("stored models = %#v, want %#v", stored, wantModels)
+	}
+
+	snapshot := fixture.manager.Current()
+	for indexName, index := range map[string]state.ExecutionCandidateIndex{
+		"candidates":    snapshot.ExecutionCandidates,
+		"route catalog": snapshot.ExecutionRouteCatalog,
+	} {
+		targets := index[protocol.OpenAICompletions][execution.OperationChatCompletion]
+		for name := range targets {
+			if strings.Contains(name, "*") {
+				t.Fatalf("%s registered pattern %q as an exact key", indexName, name)
+			}
+		}
+		if len(targets) != 3 {
+			t.Fatalf("%s = %#v, want 3 concrete routed names", indexName, targets)
+		}
+	}
+	for indexName, index := range map[string]state.ModelPatternIndex{
+		"candidates":    snapshot.ExecutionPatterns,
+		"route catalog": snapshot.ExecutionRoutePatterns,
+	} {
+		patterns := index[protocol.OpenAICompletions][execution.OperationChatCompletion]
+		if len(patterns) != 2 || patterns[0].Pattern != "claude-*[1m]" || patterns[1].Pattern != "claude-*" {
+			t.Fatalf("%s patterns = %#v, want [claude-*[1m] claude-*]", indexName, patterns)
+		}
+	}
+
+	// 「这个分组能放哪些模型」的候选集面向用户与访问密钥白名单，模式不是可请求的
+	// 具体名称，必须排除；否则用户会选中一个在请求期永远匹配不上的筛选值。
+	options, err := fixture.service.ListGroupOptions(t.Context())
+	if err != nil {
+		t.Fatalf("ListGroupOptions() error = %v", err)
+	}
+	for _, option := range options {
+		if option.ID != created.GroupID {
+			continue
+		}
+		for _, name := range option.Models {
+			if strings.Contains(name, "*") {
+				t.Fatalf("group options leaked pattern %q: %#v", name, option.Models)
+			}
+		}
+		if want := []string{"deepseek-flash", "exact-owner", "claude-sonnet-5"}; !reflect.DeepEqual(option.Models, want) {
+			t.Fatalf("group options models = %#v, want %#v", option.Models, want)
+		}
+	}
+}
+
+// 同一个通配符模式被两个不同上游认领必须在保存阶段拒绝：否则该模式解析到哪个上游
+// 由候选排序而非配置决定。conflicts[].client_model 必须是模式字符串本身。
+func TestUpdateGroupModelsRejectsDuplicateWildcardAcrossUpstreams(t *testing.T) {
+	t.Parallel()
+	fixture := newServiceFixture(t)
+	mustEnsureInitialPrices(t, fixture)
+	created, err := fixture.service.CreateGroup(t.Context(), GroupCreateRequest{
+		ChannelID:   channel.OpenAICompatible,
+		Params:      json.RawMessage(`{"base_url":"https://wildcard-conflict.example.com/v1"}`),
+		Models:      optionalGroupModels{Set: true, Values: []GroupModel{{ID: "seed"}}},
+		Credentials: "sk-wildcard-conflict", ConnectionType: "api_key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var apiErr *app_errors.APIError
+	_, err = fixture.service.UpdateGroupModels(t.Context(), created.GroupID, GroupModelsUpdateRequest{
+		Models: optionalGroupModels{Set: true, Values: []GroupModel{
+			{ID: "provider-a", Aliases: []string{"claude-*"}},
+			{ID: "provider-b", Aliases: []string{"claude-*"}},
+		}},
+	})
+	if !errors.As(err, &apiErr) || apiErr.Code != app_errors.ErrModelNameConflict.Code {
+		t.Fatalf("UpdateGroupModels() error = %#v, want MODEL_NAME_CONFLICT", err)
+	}
+	data, ok := apiErr.Data.(ModelNameConflictData)
+	if !ok || !reflect.DeepEqual(data.Conflicts, []ModelNameConflict{
+		{ClientModel: "claude-*", Indexes: []int{0, 1}},
+	}) {
+		t.Fatalf("conflict data = %#v", apiErr.Data)
+	}
+	if stored := loadCreatedGroupModels(t, fixture, created.GroupID); len(stored) != 1 || stored[0].ID != "seed" {
+		t.Fatalf("rejected write changed stored models = %#v", stored)
+	}
+}
+
+// 同一模式跨条目但同属一个上游 ID 是存量「一个模型多个名」的写法，不算冲突；两个不同
+// 但重叠的模式也不构成冲突，请求走哪条由特异性裁决。
+func TestUpdateGroupModelsAcceptsSharedAndOverlappingWildcards(t *testing.T) {
+	t.Parallel()
+	fixture := newServiceFixture(t)
+	mustEnsureInitialPrices(t, fixture)
+	created, err := fixture.service.CreateGroup(t.Context(), GroupCreateRequest{
+		ChannelID: channel.OpenAICompatible,
+		Params:    json.RawMessage(`{"base_url":"https://wildcard-coexist.example.com/v1"}`),
+		Models: optionalGroupModels{Set: true, Values: []GroupModel{
+			{ID: "provider-a", Aliases: []string{"claude-*"}},
+			{ID: "provider-a", Aliases: []string{"claude-*"}},
+			{ID: "provider-b", Aliases: []string{"claude-sonnet-*"}},
+		}},
+		Credentials: "sk-wildcard-coexist", ConnectionType: "api_key",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup() error = %v", err)
+	}
+	snapshot := fixture.manager.Current()
+	patterns := snapshot.ExecutionPatterns[protocol.OpenAICompletions][execution.OperationChatCompletion]
+	if len(patterns) != 2 {
+		t.Fatalf("patterns = %#v, want two coexisting patterns", patterns)
+	}
+	// 同 ID 的重复认领只注册一次：重复注册会放大该目标的候选权重。
+	if patterns[1].Pattern != "claude-*" || len(patterns[1].Targets) != 1 {
+		t.Fatalf("shared pattern targets = %#v, want a single registration", patterns[1])
+	}
+	if patterns[0].Pattern != "claude-sonnet-*" || len(patterns[0].Targets) != 1 {
+		t.Fatalf("overlapping pattern targets = %#v", patterns[0])
+	}
+	_ = created
 }
 
 // 升级前的库里可能已存在「别名 xxxx[1M]」与「另一条目 ID xxxx」并存的配置。派生名

@@ -16,6 +16,7 @@ import CompactFieldError from '@/components/ui/CompactFieldError.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import InlineFeedback from '@/components/ui/InlineFeedback.vue'
 import { assertJSONNumbersRoundTrip, JSONNumberPrecisionError } from '@/lib/json-number'
+import { concreteModelNames } from '@/lib/model-name'
 import {
   decodeParameterPath,
   expandParameterSet,
@@ -143,8 +144,8 @@ function createRows(value: ParameterOverrideRuleDto[]): RuleRow[] {
 const rows = ref<RuleRow[]>(createRows(props.modelValue))
 const moveAnnouncement = ref('')
 const modelSuggestions = computed(() =>
-  [...new Set(props.models.flatMap(({ client_models }) => client_models))].sort((left, right) =>
-    left.localeCompare(right),
+  [...new Set(concreteModelNames(props.models.flatMap(({ client_models }) => client_models)))].sort(
+    (left, right) => left.localeCompare(right),
   ),
 )
 const availableProtocols = computed(() => {

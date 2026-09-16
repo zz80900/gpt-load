@@ -204,6 +204,168 @@ func TestInspectNormalizesContextSuffixInModelFilter(t *testing.T) {
 	}
 }
 
+// wildcardSnapshot 构造一个只带通配符别名、不带凭据的快照。无凭据时命中的组会停在
+// ReasonNoCredentials，因此 Included + UpstreamModelID 正好是「模型名解析成功」的证据。
+func wildcardSnapshot(t *testing.T, models ...state.ModelConfig) *state.ConfigSnapshot {
+	t.Helper()
+	snapshot, err := state.Compile(state.CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []state.GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "active", ChannelID: channel.Anthropic,
+				Params: json.RawMessage(`{}`), Models: models, Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	return snapshot
+}
+
+// routeUpstream 要求模型名解析到唯一一个上游，并返回它。
+func routeUpstream(t *testing.T, snapshot *state.ConfigSnapshot, model string) string {
+	t.Helper()
+	got, err := Inspect(snapshot, nil, Query{
+		ClientProtocol: protocol.Anthropic, Operation: execution.OperationChatCompletion,
+		ExternalModel: modelPointer(model),
+		AccessKey:     state.AccessKeyView{Status: state.AccessKeyStatusActive},
+	}, inspectNow())
+	if err != nil {
+		t.Fatalf("Inspect(%q) error = %v", model, err)
+	}
+	if len(got.Groups) != 1 || !got.Groups[0].Included || got.Groups[0].UpstreamModelID == nil {
+		t.Fatalf("Inspect(%q) = %#v, want a single included group with an upstream model", model, got)
+	}
+	return *got.Groups[0].UpstreamModelID
+}
+
+// routeReason 要求模型名解析失败，并返回失败原因。
+func routeReason(t *testing.T, snapshot *state.ConfigSnapshot, model string) ReasonCode {
+	t.Helper()
+	got, err := Inspect(snapshot, nil, Query{
+		ClientProtocol: protocol.Anthropic, Operation: execution.OperationChatCompletion,
+		ExternalModel: modelPointer(model),
+		AccessKey:     state.AccessKeyView{Status: state.AccessKeyStatusActive},
+	}, inspectNow())
+	if err != nil {
+		t.Fatalf("Inspect(%q) error = %v", model, err)
+	}
+	if got.Routable || len(got.Groups) != 0 {
+		t.Fatalf("Inspect(%q) = %#v, want no route", model, got)
+	}
+	return got.Reason
+}
+
+// 通配符别名的核心场景：一个上游接住一整类客户端模型名。别名 claude-*[1m] 同时以自身
+// 与剥掉上下文后缀的 claude-* 匹配，因此带后缀与不带后缀的请求名都要命中。
+//
+// 注意 '*' 吞掉的是任意字节序列，'claude-*' 因此也能匹配 'claude-opus-5[1m]'——后缀在
+// 通配符覆盖范围内，不需要单独的派生规则。
+func TestInspectRoutesWildcardAliasFallback(t *testing.T) {
+	t.Parallel()
+
+	snapshot := wildcardSnapshot(t,
+		state.ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-*[1m]"}},
+	)
+	for _, model := range []string{
+		"claude-opus-5",
+		"claude-sonnet-5",
+		"claude-opus-5[1m]",
+		"claude-*[1m]",
+		"claude-*",
+	} {
+		if got := routeUpstream(t, snapshot, model); got != "deepseek-flash" {
+			t.Fatalf("route %q = %q, want deepseek-flash", model, got)
+		}
+	}
+}
+
+// 精确命中必须短路：命中精确键时不得再考虑任何模式，也不得把模式的目标合并进来。
+func TestInspectPrefersExactMatchOverWildcard(t *testing.T) {
+	t.Parallel()
+
+	snapshot := wildcardSnapshot(t,
+		state.ModelConfig{ID: "provider-exact", Aliases: []string{"claude-sonnet-5"}},
+		state.ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-*"}},
+	)
+	if got := routeUpstream(t, snapshot, "claude-sonnet-5"); got != "provider-exact" {
+		t.Fatalf("route claude-sonnet-5 = %q, want provider-exact", got)
+	}
+	if got := routeUpstream(t, snapshot, "claude-opus-5"); got != "deepseek-flash" {
+		t.Fatalf("route claude-opus-5 = %q, want deepseek-flash", got)
+	}
+}
+
+// 重叠模式的裁决只由特异性决定：字面前缀更长的模式胜出。交换两个条目的书写顺序后结果
+// 必须不变，否则路由会随配置顺序漂移。
+func TestInspectResolvesOverlappingWildcardsBySpecificity(t *testing.T) {
+	t.Parallel()
+
+	forward := wildcardSnapshot(t,
+		state.ModelConfig{ID: "broad", Aliases: []string{"claude-*"}},
+		state.ModelConfig{ID: "specific", Aliases: []string{"claude-sonnet-*"}},
+	)
+	reversed := wildcardSnapshot(t,
+		state.ModelConfig{ID: "specific", Aliases: []string{"claude-sonnet-*"}},
+		state.ModelConfig{ID: "broad", Aliases: []string{"claude-*"}},
+	)
+	for name, snapshot := range map[string]*state.ConfigSnapshot{"forward": forward, "reversed": reversed} {
+		if got := routeUpstream(t, snapshot, "claude-sonnet-5"); got != "specific" {
+			t.Fatalf("%s route claude-sonnet-5 = %q, want specific", name, got)
+		}
+		if got := routeUpstream(t, snapshot, "claude-opus-5"); got != "broad" {
+			t.Fatalf("%s route claude-opus-5 = %q, want broad", name, got)
+		}
+	}
+}
+
+// 通配符不得改变「查不到就 503」这条契约：模式存在但请求名不匹配时，结果必须与完全
+// 没有模式时逐字相同。
+func TestInspectKeepsNoRouteTargetWhenNoPatternMatches(t *testing.T) {
+	t.Parallel()
+
+	snapshot := wildcardSnapshot(t,
+		state.ModelConfig{ID: "deepseek-flash", Aliases: []string{"claude-*"}},
+	)
+	for _, model := range []string{"gpt-4o", "claude", ""} {
+		if got := routeReason(t, snapshot, model); got != ReasonNoRouteTarget {
+			t.Fatalf("reason for %q = %q, want %q", model, got, ReasonNoRouteTarget)
+		}
+	}
+}
+
+// 无模型资源请求的键是保留空串 NoModelRouteKey，它只可能在精确索引里有目标。裸通配符
+// '*' 能匹配空串，因此如果不按 externalModel 是否存在把守兜底，资源操作会被模式劫持。
+func TestEvaluateTargetsNeverMatchesPatternsForModellessRequests(t *testing.T) {
+	t.Parallel()
+
+	snapshot := wildcardSnapshot(t,
+		state.ModelConfig{ID: "deepseek-flash", Aliases: []string{"*"}},
+	)
+	decisions, reason, err := evaluateTargets(
+		snapshot,
+		snapshot.ExecutionCandidates,
+		snapshot.ExecutionPatterns,
+		normalizedQuery{
+			clientProtocol:   protocol.Anthropic,
+			operation:        execution.OperationChatCompletion,
+			routeRequirement: execution.RouteRequirementAny,
+			externalModel:    nil,
+			accessKey:        state.AccessKeyView{Status: state.AccessKeyStatusActive},
+		},
+	)
+	if err != nil {
+		t.Fatalf("evaluateTargets() error = %v", err)
+	}
+	if len(decisions) != 0 || reason != ReasonNoRouteTarget {
+		t.Fatalf("decisions = %#v, reason = %q, want no route target", decisions, reason)
+	}
+
+	// 同一个快照下带模型名的请求仍然正常命中，证明上面的结果来自守卫而不是模式失效。
+	if got := routeUpstream(t, snapshot, "claude-opus-5"); got != "deepseek-flash" {
+		t.Fatalf("route claude-opus-5 = %q, want deepseek-flash", got)
+	}
+}
+
 func TestInspectExplainsGroupsAndKeysInStableOrder(t *testing.T) {
 	now := inspectNow()
 	snapshot := inspectSnapshot(t)

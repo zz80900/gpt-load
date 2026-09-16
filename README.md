@@ -155,6 +155,19 @@ Embeddings initially uses the native OpenAI-compatible wire only on the OpenAI, 
 
 Rerank uses the independent `rerank` protocol through `POST /v1/rerank` on the OpenAI Compatible, New API, and GPT-Load API-key channels. Requests contain `model`, `query`, and a text-only `documents` array, with optional upstream parameters such as `top_n` and `return_documents`. Streaming, subscription channels, and protocol conversion are not supported. OpenAI Compatible takes a complete API prefix (for example, `https://host/v1`); New API / GPT-Load take the gateway root. The upstream must implement a compatible Rerank endpoint. AccessKeys without a protocol filter also gain Rerank access. Responses containing only non-token units such as `search_units` remain unpriced; these units are not treated as tokens or free requests.
 
+### Model names and aliases
+
+Every model in a group has an upstream ID and any number of client-facing aliases. A request using any of those names routes to the same upstream model.
+
+- **Context suffix** — an alias written as `xxxx[1M]` lets a client such as Claude Code enable the large context window by reading `xxxx[1M]` from `/v1/models`, while the request it actually sends is `xxxx`. Both names route, so the suffix costs nothing.
+- **Wildcards** — an alias containing `*` is treated as a pattern, and `*` matches any byte sequence, including an empty one. Give upstream `deepseek-flash` the alias `claude-*[1m]` and client requests for `claude-opus-5`, `claude-sonnet-5`, or `claude-opus-5[1m]` all route to it.
+- **Precedence** — an exact name always wins over a pattern. When several patterns match, the one with the longer literal prefix wins (`claude-sonnet-*` beats `claude-*`).
+- **Visibility** — patterns never appear in `/v1/models`, in group model candidates, on the models page, or in the access-key model filter. A pattern is a routing rule, not a model name.
+- **Conflicts** — within one group, two different upstream IDs cannot claim the same alias, including the same pattern; the save is rejected with `MODEL_NAME_CONFLICT`.
+- **Known edges** — a bare `*` is a legal alias, and it captures every request name in the group that has no exact match, so unknown models reach that upstream instead of returning 503. A `*` alias that already existed before this feature was inert (it matched nothing); it now routes for real.
+
+**Claude adapter toggle** — the model table on a group page has a *Claude adapter* column between the alias and pricing columns. Turning it on is exactly equivalent to adding the alias `claude-*[1m]` to that model, which routes every Claude model name to that upstream; turning it off removes the alias. The alias itself is not shown in the alias field — the toggle owns it. Only one model per group can have it enabled.
+
 ### Built-in channels
 
 - **Official and cloud** — OpenAI, Anthropic, Gemini, xAI, Azure OpenAI, AWS Bedrock, Google Vertex AI

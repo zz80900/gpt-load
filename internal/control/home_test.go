@@ -261,6 +261,41 @@ func TestReadAccessKeyHomeBaseScopesInventoryToRoutableModels(t *testing.T) {
 	}
 }
 
+// 首页的模型名称集合会直接喂给「接入客户端」的配置生成器，因此必须排除通配符别名：
+// 模式不是客户端可以填进配置文件的具体模型名。
+func TestReadAccessKeyHomeBaseExcludesWildcardAliasesFromModelNames(t *testing.T) {
+	t.Parallel()
+	fixture := newServiceFixture(t)
+	createPriceTestGroup(t, fixture.db, models.Group{
+		Name: "wildcard", ChannelID: string(channel.OpenAICompatible), Params: models.JSON(`{"base_url":"https://home-wildcard.example/v1"}`),
+		Models:    models.JSON(`[{"id":"deepseek-flash","aliases":["claude-*[1m]","client-a"]}]`),
+		Overrides: models.JSON(`{}`), Enabled: true,
+	})
+	created, err := fixture.service.CreateAccessKey(t.Context(), AccessKeyCreateRequest{Name: "home wildcard"})
+	if err != nil {
+		t.Fatalf("CreateAccessKey() error = %v", err)
+	}
+
+	result, err := fixture.service.ReadAccessKeyHomeBase(
+		t.Context(),
+		time.Date(2026, time.August, 8, 20, 0, 0, 0, time.UTC).UnixMilli(),
+		created.ID,
+	)
+	if err != nil {
+		t.Fatalf("ReadAccessKeyHomeBase() error = %v", err)
+	}
+	var models []string
+	for _, accessKey := range result.AccessKeys {
+		if accessKey.ID == created.ID {
+			models = accessKey.Models
+		}
+	}
+	want := []string{"client-a", "deepseek-flash"}
+	if !reflect.DeepEqual(models, want) {
+		t.Fatalf("home model names = %#v, want %#v (no patterns)", models, want)
+	}
+}
+
 func TestReadHomeBaseFailsClosed(t *testing.T) {
 	t.Parallel()
 	t.Run("invalid time", func(t *testing.T) {
