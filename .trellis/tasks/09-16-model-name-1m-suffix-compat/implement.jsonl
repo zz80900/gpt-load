@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/09-16-model-name-1m-suffix-compat/research/name-collection-usage-map.md", "reason": "名称集合全部消费点的处置表（改 5 处、明确不改 4 处）与关键行号锚点，实施时逐项核对；含 state→parameteroverride 的单向依赖约束、两处白名单空集判断必须保留、claimed 去重让派生名天然幂等"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 state / control / scheduler / gateway / parameteroverride 五层改同一语义（名称归一），需逐边界确认契约与验证归属；其触发条件明确覆盖「跨 3+ 层」与「修改任何常量或配置」"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "后缀归一必须收敛到 modelname 单点，禁止各层各写一份判断；冲突检测三处、白名单两处、名称集合两函数的分工需按复用原则判定，写新 helper 前先搜既有实现"}

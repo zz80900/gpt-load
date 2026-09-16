@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/09-16-model-name-1m-suffix-compat/research/name-collection-usage-map.md", "reason": "检查阶段对照处置表确认 5 处改动全部落地、4 处不动点未被误改；重点核验前端零 diff、无后缀场景既有断言值不变（哨兵：group_models_test.go 的 len(targets)!=4）、读路径仍用 ExternalModelNames"}
+{"file": ".trellis/tasks/09-16-model-name-1m-suffix-compat/design.md", "reason": "第 5.2 节三处冲突检测的口径判定与第 7 节存量数据撞名风险是验收必须覆盖的边界；第 5.6 节列出不得改动的清单；第 10 节列出回归测试范围"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层契约校验：client_models 形状不变、白名单空集语义保留、编译期错误信息能区分显式重名与派生重名、响应模型名回写为客户端请求名"}
