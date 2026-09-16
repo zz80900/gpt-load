@@ -100,6 +100,41 @@ create one owner for:
 
 Rendering code may format fields, but it must not redefine the payload contract.
 
+### Mistake 5: Equality Asserted Across Independently Computed Fields
+
+**Bad**: A consumer asserts two response fields are equal, and the backend
+computes each on its own. Each is individually correct, so nothing fails until a
+configuration exercises the difference — and the two usually coincide in simple
+configurations, which is exactly when the mistake stays invisible.
+
+```
+reference_count  ←  counts config entries          (one loop)
+associations     ←  counts (group, name) pairs     (another loop)
+```
+
+**Good**: When two fields must be equal, make one definition produce both, then
+keep the assertion as a regression guard:
+
+```go
+// One key function, called from both sites.
+func priceAssociationKey(groupID uint, clientModel string) string {
+    return fmt.Sprintf("%d\x00%s", groupID, clientModel)
+}
+```
+
+**Rule**: For every cross-layer equality assertion, ask whether the two sides
+come from the same definition or from two independent computations. If it is the
+latter, either share the definition or drop the assertion — one that holds by
+coincidence turns the next unrelated edit into an outage. Note which pairs are
+merely *consistent* (two loops filtering on the same fields) as well: they are
+weaker, and extending either filter breaks them silently.
+
+**Real-world example**: `reference_count` counted config rows while
+`associations.length` counted `(group, client-visible name)` pairs. They agree
+only when no entry owns more than one name, so adding any alias broke the
+assertion and the upstream-model detail drawer refused to render. Both sites now
+call `priceAssociationKey`; see `.trellis/spec/backend/model-name-contract.md`.
+
 ---
 
 ## Checklist for Cross-Layer Features
@@ -120,6 +155,8 @@ After implementation:
       casting payload fields locally
 - [ ] Checked that derived state points back to the source event identifier
       (`seq`, `id`, `version`) instead of inventing a second cursor
+- [ ] For every equality assertion between two response fields, confirmed both
+      sides come from one definition rather than two independent computations
 
 ---
 

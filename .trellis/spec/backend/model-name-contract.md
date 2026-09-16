@@ -1,7 +1,8 @@
 # Model Name Contract
 
-> How a client-supplied model name becomes a routable target, and which of the
-> three name sets each consumer is allowed to read.
+> How a client-supplied model name becomes a routable target, which of the
+> three name sets each consumer is allowed to read, and how the counts reported
+> beside the association rows are defined.
 
 ---
 
@@ -143,28 +144,87 @@ func RoutableModelNames(model ModelConfig) []string { /* ... */ }
 names := state.RoutableModelNames(state.ModelConfig{ID: id, Aliases: aliases})
 ```
 
-### Known cross-layer defect
+### Count contract: the numbers beside the association rows
 
-`GetUpstreamModelDetail` counts two different things. `price.reference_count`
-comes from `buildPriceReferenceSnapshot` (`internal/control/price_reconcile.go`),
-which increments **once per config entry**; `associations` is built **once per
-(client-visible name, group)** pair. `web/src/app/resources/models.ts` asserts
-they are equal, so the upstream-model detail page fails to load whenever a
-single entry owns more than one name.
+`GetUpstreamModelDetail` returns association rows plus four counts, and
+`web/src/app/resources/models.ts` asserts exact relations between all of them in
+a single `if`. Each count answers a different question; conflating them is what
+produced the defect this section replaces.
 
-This is pre-existing and **unrelated to suffixes**. Measured on the current
-build: a single *plain* alias already yields `reference_count = 1` against
-`associations.length = 2`. Only an entry with no alias at all satisfies the
-assertion — it was written for a world where one config entry owned exactly one
-name.
+| Field | Counts | Definition site |
+| --- | --- | --- |
+| `price.reference_count` | Distinct `(group, client-visible name)` pairs | `buildPriceReferenceSnapshot` (`internal/control/price_reconcile.go`) |
+| `price.reference_group_count` | Distinct groups across those pairs | same function |
+| `associations.length` | The same pairs, materialised as rows | `GetUpstreamModelDetail` (`internal/control/project_model_collection.go`) |
+| `client_model_count` | Distinct client-visible names, de-duplicated **across groups** | same site (`len(clientModels)`) |
+| `group_count` | Distinct groups over the association rows | same site (`len(groupIDs)`) |
 
-Derived names do not change pass/fail; they only raise the name count. The one
-shape that crosses the boundary is an upstream id that itself ends in `[1M]`
-with no alias, which goes from 1:1 (passing) to 1:2.
+`reference_count` is **not** a name count. The phrase "how many client-visible
+names reference this upstream model" describes `client_model_count`;
+`reference_count` is the association count, and it equals `associations.length`
+even when one name is reachable through several groups. The two numbers coincide
+only when every group holds an identical name set — precisely the case in which
+a mistake here stays invisible.
 
-The other count invariants in that assertion — `reference_group_count ==
-group_count` and `client_model_count == distinct client models` — hold in every
-shape, so a fix only has to reconcile one field. `reference_count` counts config
-entries where the assertion expects client-visible names; both are meant to
-express "how many client-visible names reference this upstream model".
+> **Warning**: `reference_count` is derived per request and never persisted, so
+> changing its definition needs no migration.
+
+#### One key, one definition
+
+`reference_count` equals `associations.length` because both are keyed by the same
+function, and that function has exactly one definition:
+
+```go
+// internal/control/price_reconcile.go
+func priceAssociationKey(groupID uint, clientModel string) string {
+    return fmt.Sprintf("%d\x00%s", groupID, clientModel)
+}
+```
+
+`reference_group_count` and `group_count` agree by a weaker mechanism: two
+separate visit loops that filter on the same pair (`channel_id`, `model.id`) and
+de-duplicate on the same value (`group.id`). They are correct today, but nothing
+structural holds them together — change either filter and check both.
+
+#### Regression baseline
+
+Measured through `GetUpstreamModelDetail`; `entries` is the value
+`reference_count` reported before the definition changed, i.e. how many config
+rows matched. `reference_group_count` equals `group_count` in every row.
+
+| Configuration | `reference_count` | `associations` | `client_model_count` | `group_count` | entries |
+| --- | --- | --- | --- | --- | --- |
+| `[{"id":"x"}]` | 1 | 1 | 1 | 1 | 1 |
+| `[{"id":"x","aliases":["client-a"]}]` | 2 | 2 | 2 | 1 | 1 |
+| `[{"id":"x","aliases":["client-a[1M]"]}]` | 3 | 3 | 3 | 1 | 1 |
+| `[{"id":"x","alias":"client-a"}]` — legacy singular field | 2 | 2 | 2 | 1 | 1 |
+| `[{"id":"x[1M]"}]` — suffix on the upstream id itself | 2 | 2 | 2 | 1 | 1 |
+| `[{"id":"x","aliases":["client-a"]},{"id":"x","aliases":["client-b"]}]` | 3 | 3 | 3 | 1 | 2 |
+| `[{"id":"x"},{"id":"x"}]` — repeated row, no aliases | 1 | 1 | 1 | 1 | 2 |
+| two groups, `x` configured in each | 2 | 2 | 1 | 2 | 2 |
+
+The last two rows are the sharpest probes. Several rows sharing one upstream id
+are **supported configuration, not dirty data**: `normalizeGroupModels` reads
+them as "one model, several names" and deliberately lets them through (see the
+comment in `internal/control/group_write.go` and the permanent case in
+`group_models_test.go`). Under entry-counting they reported 2 against 1
+association — the exact drift this contract exists to prevent.
+
+#### Wrong vs Correct
+
+##### Wrong
+
+```go
+// The count and the list agree only while two hand-written literals stay in
+// sync. Nothing enforces it, and the pair drifts on the first edit.
+key := fmt.Sprintf("%d\x00%s", group.ID, clientModel)      // snapshot side
+key := fmt.Sprintf("%d\x00%s", group.row.ID, clientModel)  // detail side
+```
+
+##### Correct
+
+```go
+// Both call sites share one definition.
+key := priceAssociationKey(group.ID, clientModel)
+```
 
