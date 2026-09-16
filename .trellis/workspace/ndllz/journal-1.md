@@ -50,3 +50,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 模型别名 1M 上下文后缀兼容
+
+**Date**: 2026-09-16
+**Task**: 模型别名 1M 上下文后缀兼容
+**Branch**: `main`
+
+### Summary
+
+Claude Code 从 /v1/models 读到 xxxx[1M] 判定为 1M 上下文模型，发起请求时却剥离后缀发送 xxxx，而路由索引里此前只有配置中显式写过的名字，基名落到 ReasonNoRouteTarget 最终响应 503。方案是让带后缀名与基名互为等价的可路由名称：新增零内部依赖的 internal/modelname 包承担后缀归一（state 依赖 parameteroverride，反向不可，后缀工具放进 state 会立刻成环），state 内新增 RoutableModelNames（ExternalModelNames 逐项展开后缀基名、派生名紧跟来源项、跳过空基名并去重），而 ExternalModelNames 的形状被前端 groups.ts 硬断言锁死为 [id, ...aliases]，因此派生名只进路由集合不进该函数。关键决策是改索引注册点而非改查找回退：appendExecutionTargets 是唯一注册点，同时喂给 ExecutionCandidates 与 ExecutionRouteCatalog，所以 /v1/models 遍历索引 key 时天然返回两个名称、列表代码无需改动，且巡检路径无需重复回退；冲突检测三个位置刻意不同口径——写路径 normalizeGroupModels 与编译期 validateCompileInput 改为 RoutableModelNames，读路径 validateGroupCollectionModels 保持 ExternalModelNames，因为升级前已存在的别名撞名若在读路径也报错会把分组列表与选项接口打成 500、用户失去修复入口，代价是存在一个窄窗口（保存通过但快照编译失败），该状态可恢复因为 Publish 编译失败时不发布新快照、旧配置继续服务；白名单匹配（scheduler 巡检与 gateway 列表两处）与参数覆盖 matches 改按后缀归一比较，两侧各自保留白名单为空即不限制的外层判断，无后缀时 Base 是恒等函数故既有行为逐字不变。验证上 13 条验收标准中 12 条有自动化覆盖并通过，第 12 条（前端模型页渲染）拆分为两部分：分组模型页依赖 client_models 形状、本任务保持该形状不变故成立，上游模型详情抽屉则属下述既有缺陷。质检阶段用一次性探针在真实服务夹具下实测，定位到一处与本任务无关但被扩大到新形态的跨层缺陷：上游模型详情页的 price.reference_count 按配置条目计数（price_reconcile.go），而前端 models.ts 断言它等于按名称展开的 associations.length，实测边界为无别名 1:1 通过、普通别名 1:2 即失败、单个后缀别名 1:3 失败、上游 ID 自身以 [1M] 结尾且无别名从 1:1 变为 1:2——即该断言自 alias 字段存在的那天起就不成立，与后缀无关，本任务只改变失败时的名称数而非是否失败；同一探针验证 reference_group_count 等于 group_count 与 client_model_count 等于去重后的 client_model 数在四种形态下全部成立，冲突被限定在单一字段口径上。该缺陷本任务不修（修它要么改 reference_count 口径牵动价格对账，要么改前端断言属独立契约变更，均属价格引用计数语义域），已留档于 backend/model-name-contract.md 的 Known cross-layer defect 段与设计工件第 7.1 节待独立任务评审。验证环境方面，全量 go test 首次崩在 gcToolchain 链接阶段的 os/exec CreateProcess（Exception 0xc0000005），改 -p 2 降并行度后跑通；5 个失败包逐包归因，catalog/authkey/webui 三个不依赖本次改动的包分别源于 Windows 文件回滚语义、Windows 路径格式与 CI 文本断言，container 与 gateway 的失败点与改动零交集，日志显示 config_snapshot_publish revision=1 编译成功；gofmt -l 报出 930 个文件与 go mod tidy -diff 报出整份 go.sum 差异均为 CRLF 检出噪声，未触碰的文件同样被列，判定方法是对被列文件去 CR 后与 gofmt 输出逐字节比对全部一致。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fc7faf5c` | (see git log) |
+| `03c828b0` | (see git log) |
+
+### Status
+
+[OK] **Completed**
