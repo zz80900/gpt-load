@@ -72,3 +72,25 @@ Claude Code 从 /v1/models 读到 xxxx[1M] 判定为 1M 上下文模型，发起
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: 统一价格引用计数口径并修正跨层契约
+
+**Date**: 2026-09-16
+**Task**: 统一价格引用计数口径并修正跨层契约
+**Branch**: `main`
+
+### Summary
+
+修复上游模型详情抽屉在带别名配置下打不开的缺陷：reference_count 由配置条目数改为 (分组, 客户端可见名称) 关联数，与 associations.length 共用 priceAssociationKey 去重键，一致性由结构保证而非巧合，前端断言一条未删。三语 sharedImpact 与 zh-CN errors.referenced 文案跟随，model_price_test.go 与 model_prices_http_test.go 两处期望值 3 改为 5。八形态实测（含旧格式单别名字段、同分组多条同 ID 条目、跨分组）逐字相等。spec 的 Known cross-layer defect 改写为陈述性计数契约并修正 how many client-visible names 这一不准确措辞，guide 增 Mistake 5 与一条跨层检查项。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f41ae51` | (see git log) |
+| `15fc1afe` | (see git log) |
+
+### Status
+
+[OK] **Completed**
