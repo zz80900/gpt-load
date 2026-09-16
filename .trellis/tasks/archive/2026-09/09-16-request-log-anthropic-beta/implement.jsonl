@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/09-16-request-log-anthropic-beta/research/request-log-beta-pipeline.md", "reason": "六层落点表与行号锚点，实施时按表逐层追加字段；含 VARCHAR(1024) 取值依据、大小写不归一的理由、出站路径禁改清单"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨六层新增同一字段，需逐边界确认输入/输出格式与验证归属；该指南的触发条件明确覆盖「新增事件字段」场景"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "新增字段应复用既有模式而非自造：recorder setter 深拷贝（setReasoning）、UTF-8 安全截断（projectModel）、migration 三函数模板（0014）"}

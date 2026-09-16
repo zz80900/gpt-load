@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/09-16-request-log-anthropic-beta/research/request-log-beta-pipeline.md", "reason": "检查阶段对照六层落点表确认无遗漏；重点核验前端 itemFields 白名单已同步（漏加会导致日志页整体不可用）、截断为 UTF-8 安全、出站路径零改动"}
+{"file": ".trellis/tasks/09-16-request-log-anthropic-beta/design.md", "reason": "设计中的兼容性与权衡章节列出验收时需覆盖的边界：历史行默认值、converted 路由下记录的是客户端声明、非 Anthropic 协议行为不变"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层契约校验：API 恒返回字符串而非 null、空串合法性、前后端同版本部署约束"}
