@@ -1140,6 +1140,45 @@ func TestRequestRecorderUsesFrozenAttemptMetadata(t *testing.T) {
 	}
 }
 
+func TestRequestRecorderCopiesDeclaredAnthropicBetas(t *testing.T) {
+	sink := &recordingRequestLogSink{}
+	recorder := newRequestRecorder(
+		sink, "anthropic-betas", time.Unix(100, 0), 1,
+		protocol.Anthropic, func() time.Time { return time.Unix(101, 0) },
+	)
+	betas := []string{"context-1m-2025-08-07", "prompt-caching-2024-07-31"}
+	recorder.setAnthropicBetas(betas)
+	betas[0] = "mutated-after-declaration"
+	recorder.emit()
+
+	want := []string{"context-1m-2025-08-07", "prompt-caching-2024-07-31"}
+	events := sink.snapshot()
+	if len(events) != 1 || !reflect.DeepEqual(events[0].AnthropicBetas, want) {
+		t.Fatalf("emitted anthropic betas = %#v, want %#v", events, want)
+	}
+	events[0].AnthropicBetas[0] = "mutated-by-sink"
+	if !reflect.DeepEqual(recorder.anthropicBetas, want) {
+		t.Fatalf("recorder anthropic betas = %#v, want %#v", recorder.anthropicBetas, want)
+	}
+}
+
+func TestRequestRecorderOmitsUndeclaredAnthropicBetas(t *testing.T) {
+	sink := &recordingRequestLogSink{}
+	recorder := newRequestRecorder(
+		sink, "anthropic-betas-absent", time.Unix(100, 0), 1,
+		protocol.OpenAICompletions, func() time.Time { return time.Unix(101, 0) },
+	)
+	recorder.setAnthropicBetas(nil)
+	recorder.emit()
+
+	events := sink.snapshot()
+	if len(events) != 1 || len(events[0].AnthropicBetas) != 0 {
+		t.Fatalf("emitted anthropic betas = %#v, want none", events)
+	}
+	var absent *requestRecorder
+	absent.setAnthropicBetas([]string{"context-1m-2025-08-07"})
+}
+
 func TestRequestRecorderDoesNotReuseClientMetadataWhenAttemptObservationIsUnavailable(t *testing.T) {
 	recorder := newRequestRecorder(
 		&recordingRequestLogSink{}, "attempt-metadata-unavailable", time.Unix(100, 0), 1,

@@ -151,8 +151,10 @@ type RequestEvent struct {
 	AffinityHit           bool
 	AffinityKind          string
 	Reasoning             reasoning.Config
-	Attempts              []Attempt
-	Usage                 UsageObservation
+	// AnthropicBetas 是客户端在本次请求中声明的 beta 能力，请求级属性，不随重试或换渠道改变。
+	AnthropicBetas []string
+	Attempts       []Attempt
+	Usage          UsageObservation
 }
 
 type RequestLogSink interface {

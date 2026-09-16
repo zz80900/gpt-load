@@ -954,6 +954,11 @@ export default {
           '上游请求模型：{upstream}\n上游返回模型：未观察到\n提示：未观察到上游返回模型',
         mismatchTooltip: '上游请求模型：{upstream}\n上游返回模型：{reported}\n告警：模型不一致',
       },
+      betas: {
+        context1M: '1M',
+        context1MHint: '客户端声明的 1M 上下文能力标记，不代表上游已接受。',
+        clientBetas: '客户端 Beta',
+      },
       reasoning: {
         compact: '[{value}]',
         disabled: '[off]',

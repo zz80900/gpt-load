@@ -68,6 +68,7 @@ type requestRecorder struct {
 	usageDiagnostics     usage.Diagnostics
 	affinityHit          bool
 	affinityKind         string
+	anthropicBetas       []string
 	attempts             []telemetry.Attempt
 	attemptPricing       []frozenAttemptPricing
 	pendingPricing       frozenAttemptPricing
@@ -150,6 +151,7 @@ func (recorder *requestRecorder) emit() {
 		AffinityHit:           recorder.affinityHit,
 		AffinityKind:          recorder.affinityKind,
 		Reasoning:             recorder.reasoning,
+		AnthropicBetas:        append([]string(nil), recorder.anthropicBetas...),
 		Operation:             recorder.operation,
 		Attempts:              append([]telemetry.Attempt(nil), recorder.attempts...),
 		Usage:                 recorder.usage,
@@ -219,6 +221,14 @@ func (recorder *requestRecorder) setStream(stream bool) {
 	if recorder != nil {
 		recorder.stream = stream
 	}
+}
+
+// setAnthropicBetas 记录客户端声明的 beta 能力。切片在 recorder 生命周期内被读取，必须复制。
+func (recorder *requestRecorder) setAnthropicBetas(betas []string) {
+	if recorder == nil {
+		return
+	}
+	recorder.anthropicBetas = append([]string(nil), betas...)
 }
 
 func (recorder *requestRecorder) setReasoning(config reasoning.Config) {

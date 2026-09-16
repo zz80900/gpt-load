@@ -31,7 +31,9 @@ import {
   formatLogOutputRate,
   formatLogTokenCount,
   formatRequestLogReasoning,
+  requestLogBetas,
   requestLogCostDisplayState,
+  requestLogDeclaresContext1M,
   requestLogUsageDisplayState,
 } from './log-format'
 import LogRouteIdentity from './LogRouteIdentity.vue'
@@ -67,6 +69,10 @@ const finalAttempt = computed(() => {
 })
 const mainErrorMessage = computed(() => log.value?.error_summary ?? '')
 const mainErrorCode = computed(() => log.value?.error_code ?? '')
+const declaredBetas = computed(() => (log.value ? requestLogBetas(log.value) : []))
+const declaresContext1M = computed(() =>
+  log.value ? requestLogDeclaresContext1M(log.value) : false,
+)
 const drawerDescription = computed(() =>
   t(
     props.selfScoped
@@ -457,7 +463,16 @@ function toggleAttemptErrorMessage(sequence: number): void {
               <code>{{ log.client_model ?? '—' }}</code
               ><small v-if="reasoningLabel(log.reasoning)" class="log-detail__reasoning">{{
                 reasoningLabel(log.reasoning)
+              }}</small
+              ><small v-if="declaresContext1M" class="log-detail__reasoning">{{
+                t('monitor.logs.betas.context1M')
               }}</small>
+            </dd>
+          </div>
+          <div v-if="declaredBetas.length > 0" class="log-detail__wide">
+            <dt>{{ t('monitor.logs.betas.clientBetas') }}</dt>
+            <dd>
+              <code>{{ log.anthropic_betas }}</code>
             </dd>
           </div>
         </dl>

@@ -150,6 +150,7 @@ type requestLogItemResponse struct {
 	ErrorSummary            string                       `json:"error_summary"`
 	AffinityHit             bool                         `json:"affinity_hit"`
 	AffinityKind            string                       `json:"affinity_kind"`
+	AnthropicBetas          string                       `json:"anthropic_betas"`
 	GroupID                 *uint                        `json:"group_id"`
 	ChannelID               *channel.ID                  `json:"channel_id"`
 	CredentialID            *uint                        `json:"credential_id"`
@@ -928,6 +929,7 @@ func mapRequestLogItemResponse(
 		ErrorSummary:            record.ErrorSummary,
 		AffinityHit:             record.AffinityHit,
 		AffinityKind:            record.AffinityKind,
+		AnthropicBetas:          record.AnthropicBetas,
 		GroupID:                 usageCost.groupID,
 		ChannelID:               usageCost.channelID,
 		CredentialID:            usageCost.credentialID,

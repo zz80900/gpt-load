@@ -59,6 +59,7 @@ import {
   hasRequestLogCache,
   reasoningBudgetSemantic,
   requestLogCostDisplayState,
+  requestLogDeclaresContext1M,
   requestLogUsageDisplayState,
 } from './log-format'
 import LogDetailDrawer from './LogDetailDrawer.vue'
@@ -831,6 +832,12 @@ function costLabel(log: RequestLogItemDto): string {
               >
                 {{ reasoningLabel(log) }}
               </OverflowTooltip>
+              <AppTooltip
+                v-if="requestLogDeclaresContext1M(log)"
+                :content="t('monitor.logs.betas.context1MHint')"
+              >
+                <small class="logs-list__reasoning">{{ t('monitor.logs.betas.context1M') }}</small>
+              </AppTooltip>
               <AppTooltip
                 v-if="log.model_consistency === 'unknown' || log.model_consistency === 'mismatch'"
                 :content="modelConsistencyTooltip(log)"

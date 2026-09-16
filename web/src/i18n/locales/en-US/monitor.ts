@@ -979,6 +979,12 @@ export default {
         mismatchTooltip:
           'Upstream request model: {upstream}\nUpstream response model: {reported}\nWarning: Model mismatch',
       },
+      betas: {
+        context1M: '1M',
+        context1MHint:
+          'Client-declared 1M context flag; it does not confirm that the upstream accepted it.',
+        clientBetas: 'Client betas',
+      },
       reasoning: {
         compact: '[{value}]',
         disabled: '[off]',

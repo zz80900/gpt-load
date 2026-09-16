@@ -361,3 +361,32 @@ func TestMapEventIgnoresModelObservationForUnsuccessfulRequest(t *testing.T) {
 		t.Fatalf("unsuccessful model observation = %q/%q", row.UpstreamReportedModel, row.ModelConsistency)
 	}
 }
+
+func TestMapEventProjectsDeclaredAnthropicBetas(t *testing.T) {
+	event := testEvent("anthropic-betas")
+	event.AnthropicBetas = []string{"context-1m-2025-08-07", "interleaved-thinking-2025-05-14"}
+
+	row := mustMapEvent(t, redact.New(), event)
+	if row.AnthropicBetas != "context-1m-2025-08-07,interleaved-thinking-2025-05-14" {
+		t.Fatalf("anthropic betas = %q", row.AnthropicBetas)
+	}
+}
+
+func TestMapEventLeavesAnthropicBetasEmptyWhenUndeclared(t *testing.T) {
+	row := mustMapEvent(t, redact.New(), testEvent("no-anthropic-betas"))
+	if row.AnthropicBetas != "" {
+		t.Fatalf("anthropic betas = %q, want empty", row.AnthropicBetas)
+	}
+}
+
+func TestMapEventBoundsAnthropicBetasWithinColumnLimit(t *testing.T) {
+	event := testEvent("oversized-anthropic-betas")
+	event.AnthropicBetas = []string{strings.Repeat("界", 400)}
+
+	row := mustMapEvent(t, redact.New(), event)
+	if len(row.AnthropicBetas) > maxAnthropicBetasBytes ||
+		!utf8.ValidString(row.AnthropicBetas) ||
+		!strings.HasSuffix(row.AnthropicBetas, truncatedMarker) {
+		t.Fatalf("projected anthropic betas = %q", row.AnthropicBetas)
+	}
+}

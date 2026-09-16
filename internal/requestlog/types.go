@@ -135,6 +135,7 @@ type Record struct {
 	ErrorSummary            string
 	AffinityHit             bool
 	AffinityKind            string
+	AnthropicBetas          string
 	Reasoning               reasoning.Config
 	Attempts                []Attempt
 	GroupID                 uint

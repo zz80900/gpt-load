@@ -186,6 +186,8 @@ export interface RequestLogItemDto {
   error_summary: string
   affinity_hit: boolean
   affinity_kind: string
+  /** 客户端在本次请求中声明的 Anthropic beta 能力，逗号分隔；空串表示未声明。 */
+  anthropic_betas: string
   group_id: number | null
   channel_id: string | null
   credential_id: number | null
@@ -291,6 +293,7 @@ const itemFields = [
   'error_summary',
   'affinity_hit',
   'affinity_kind',
+  'anthropic_betas',
   'group_id',
   'channel_id',
   'credential_id',
@@ -636,6 +639,7 @@ function projectItemRecord(record: Record<string, unknown>): RequestLogItemDto {
     error_summary: projectString(record.error_summary, { allowEmpty: true }),
     affinity_hit: projectBoolean(record.affinity_hit),
     affinity_kind: projectString(record.affinity_kind, { allowEmpty: true }),
+    anthropic_betas: projectString(record.anthropic_betas, { allowEmpty: true }),
     group_id: record.group_id === null ? null : projectSafeInteger(record.group_id, { minimum: 1 }),
     channel_id: record.channel_id === null ? null : projectChannelID(record.channel_id),
     credential_id:

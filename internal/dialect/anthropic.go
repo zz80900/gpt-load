@@ -46,6 +46,8 @@ func (d *Anthropic) InspectRequest(req *ParsedRequest) (RequestMetadata, error) 
 	if err != nil {
 		return RequestMetadata{}, fmt.Errorf("decode %s request: %w", d.Protocol(), err)
 	}
+	// beta 是请求级声明，count_tokens 路径同样记录。
+	metadata.AnthropicBetas = inspectAnthropicBetas(req.Header, req.Body)
 	if req.Path == "/v1/messages/count_tokens" {
 		metadata.Stream = false
 		metadata.ObserveUsage = false

@@ -15,6 +15,19 @@ export function requestLogCostDisplayState(log: RequestLogItemDto): RequestLogCo
   return 'complete'
 }
 
+/** 与后端 dialect.AnthropicContext1MBeta 保持一致的 1M 上下文 beta 标识符。 */
+const anthropicContext1MBeta = 'context-1m-2025-08-07'
+
+/** 拆分客户端声明的 beta 串。契约保证该字段恒为字符串，未声明时为空串。 */
+export function requestLogBetas(log: RequestLogItemDto): string[] {
+  return log.anthropic_betas === '' ? [] : log.anthropic_betas.split(',')
+}
+
+/** 客户端是否声明了 1M 上下文 beta。记录的是声明事实，不代表上游已接受。 */
+export function requestLogDeclaresContext1M(log: RequestLogItemDto): boolean {
+  return requestLogBetas(log).includes(anthropicContext1MBeta)
+}
+
 export function formatLogDuration(milliseconds: number): string {
   if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
   if (milliseconds < 1_000) return `${milliseconds}ms`

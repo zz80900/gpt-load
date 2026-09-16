@@ -974,6 +974,12 @@ export default {
         mismatchTooltip:
           'アップストリーム要求モデル：{upstream}\nアップストリーム応答モデル：{reported}\n警告：モデル不一致',
       },
+      betas: {
+        context1M: '1M',
+        context1MHint:
+          'クライアントが宣言した 1M コンテキストのフラグです。上流が受理したことを意味しません。',
+        clientBetas: 'クライアント Beta',
+      },
       reasoning: {
         compact: '[{value}]',
         disabled: '[off]',

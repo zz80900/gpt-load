@@ -386,6 +386,7 @@ func TestRequestLogEndpointReturnsOpaqueCursorAndSafeDTO(t *testing.T) {
 					DurationMs:             1234,
 					AffinityHit:            true,
 					AffinityKind:           telemetry.AffinityPromptCacheKey,
+					AnthropicBetas:         "context-1m-2025-08-07,interleaved-thinking-2025-05-14",
 					GroupID:                12,
 					ChannelID:              channel.OpenAI,
 					CredentialID:           99,
@@ -454,6 +455,7 @@ func TestRequestLogEndpointReturnsOpaqueCursorAndSafeDTO(t *testing.T) {
 		t.Fatalf("list item unexpectedly exposes attempts: %#v", envelope.Data.Items[0])
 	}
 	if envelope.Data.Items[0]["affinity_kind"] != telemetry.AffinityPromptCacheKey ||
+		envelope.Data.Items[0]["anthropic_betas"] != "context-1m-2025-08-07,interleaved-thinking-2025-05-14" ||
 		envelope.Data.Items[0]["upstream_reported_model"] != "reported-model" ||
 		envelope.Data.Items[0]["model_consistency"] != string(telemetry.ModelConsistencyMismatch) ||
 		envelope.Data.Items[0]["route_mode"] != string(channel.RouteNative) ||
@@ -1096,6 +1098,7 @@ func TestRequestLogEndpointsBindAccessKeyScopeAndRedactRoutingInternals(t *testi
 		AttemptCount:          2,
 		AffinityHit:           true,
 		AffinityKind:          telemetry.AffinityPromptCacheKey,
+		AnthropicBetas:        "context-1m-2025-08-07",
 		GroupID:               99,
 		ChannelID:             channel.OpenAI,
 		CredentialID:          101,
@@ -1219,6 +1222,10 @@ func assertAccessKeyLogRedaction(t *testing.T, body []byte, detail bool) {
 	}
 	if detail && string(item["attempts"]) != "[]" {
 		t.Fatalf("AccessKey attempts = %s, want []; body=%s", item["attempts"], body)
+	}
+	// beta 是客户端自身的请求声明，不属于网关内部字段，按访问密钥作用域原样返回。
+	if string(item["anthropic_betas"]) != `"context-1m-2025-08-07"` {
+		t.Fatalf("AccessKey log anthropic_betas = %s, want preserved declaration; body=%s", item["anthropic_betas"], body)
 	}
 	for _, secret := range []string{
 		"private-upstream-model", "private-reported-model", "private group",

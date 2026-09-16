@@ -605,6 +605,7 @@ func (handler *Handler) Handle(ginContext *gin.Context) {
 	recorder.setOperation(metadata.Operation)
 	recorder.setStream(metadata.Stream)
 	recorder.setReasoning(metadata.Reasoning)
+	recorder.setAnthropicBetas(metadata.AnthropicBetas)
 	recorder.setUsageApplicable(metadata.ObserveUsage)
 	recorder.setPricingMode(metadata.PricingMode)
 	recorder.setUsageDiagnostics(metadata.UsageDiagnostics)

@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	maxSummaryBytes = 4096
-	maxModelBytes   = 255
-	truncatedMarker = "...[truncated]"
+	maxSummaryBytes        = 4096
+	maxModelBytes          = 255
+	maxAnthropicBetasBytes = 1024
+	truncatedMarker        = "...[truncated]"
 )
 
 func mapEvent(
@@ -129,6 +130,7 @@ func mapEvent(
 		ErrorSummary:            sanitizeSummary(redactor, event.ErrorSummary),
 		AffinityHit:             event.AffinityHit,
 		AffinityKind:            event.AffinityKind,
+		AnthropicBetas:          projectAnthropicBetas(event.AnthropicBetas),
 		ReasoningMode:           event.Reasoning.Mode,
 		ReasoningEffort:         event.Reasoning.Effort,
 		ReasoningBudgetTokens:   event.Reasoning.BudgetTokens,
@@ -405,16 +407,30 @@ func redactIdentityValue(redactor *redact.Redactor, value string) string {
 }
 
 func projectModel(model string) string {
-	model = strings.ToValidUTF8(model, "\uFFFD")
-	if len(model) <= maxModelBytes {
-		return model
+	return projectText(model, maxModelBytes)
+}
+
+// projectAnthropicBetas \u628A beta \u96C6\u5408\u5E8F\u5217\u5316\u4E3A\u9017\u53F7\u5206\u9694\u4E32\u3002beta \u6807\u8BC6\u7B26\u53D6\u81EA HTTP token \u5B57\u7B26\u96C6\uFF0C
+// \u4E0D\u542B\u9017\u53F7\uFF0C\u56E0\u6B64 join \u65E0\u6B67\u4E49\uFF0C\u4E5F\u4E0E Anthropic-Beta \u8BF7\u6C42\u5934\u7684\u4E66\u5199\u683C\u5F0F\u4E00\u81F4\u3002
+func projectAnthropicBetas(betas []string) string {
+	if len(betas) == 0 {
+		return ""
+	}
+	return projectText(strings.Join(betas, ","), maxAnthropicBetasBytes)
+}
+
+// projectText \u5F52\u4E00\u5316\u975E\u6CD5 UTF-8 \u5E76\u6309\u5B57\u8282\u4E0A\u9650\u505A UTF-8 \u5B89\u5168\u622A\u65AD\uFF0C\u907F\u514D\u622A\u51FA\u534A\u4E2A\u5B57\u7B26\u3002
+func projectText(value string, limit int) string {
+	value = strings.ToValidUTF8(value, "\uFFFD")
+	if len(value) <= limit {
+		return value
 	}
 
-	prefixBytes := maxModelBytes - len(truncatedMarker)
-	for prefixBytes > 0 && !utf8.ValidString(model[:prefixBytes]) {
+	prefixBytes := limit - len(truncatedMarker)
+	for prefixBytes > 0 && !utf8.ValidString(value[:prefixBytes]) {
 		prefixBytes--
 	}
-	return model[:prefixBytes] + truncatedMarker
+	return value[:prefixBytes] + truncatedMarker
 }
 
 func sanitizeSummary(redactor *redact.Redactor, summary string) string {
