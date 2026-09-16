@@ -163,11 +163,23 @@ func TestReadHomeBaseUsesPersistedAndRuntimeSnapshots(t *testing.T) {
 					protocol.OpenAICompletions,
 					protocol.Gemini,
 				},
+				// 列表与过滤器同口径：模型的任一对外名命中过滤器，它的全部
+				// 对外名（上游 ID + 别名）都可用，因此 ID 也出现在列表里。
+				Models: []string{
+					"client-primary", "client-secondary", "client-third",
+					"gpt-4o", "ignored-empty", "upstream-duplicate",
+				},
 			},
 			{
 				ID: 9, Name: "all protocols",
 				MaskedKey: "sk-gl-****c0de",
 				Protocols: protocol.DataPlaneProtocols(),
+				// 列表与过滤器同口径：模型的任一对外名命中过滤器，它的全部
+				// 对外名（上游 ID + 别名）都可用，因此 ID 也出现在列表里。
+				Models: []string{
+					"client-primary", "client-secondary", "client-third",
+					"gpt-4o", "ignored-empty", "upstream-duplicate",
+				},
 			},
 		},
 	}
@@ -236,8 +248,14 @@ func TestReadAccessKeyHomeBaseScopesInventoryToRoutableModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAccessKeyHomeBase() error = %v", err)
 	}
+	// 列表与过滤器同口径：模型的任一对外名命中过滤器，它的全部对外名都可用。
+	// 所以这里既有命中的别名 client-allowed，也有该模型的上游 ID upstream-allowed。
 	if result.Inventory != (HomeInventory{GroupCount: 1, ModelCount: 1}) ||
 		len(result.AccessKeys) != 1 || result.AccessKeys[0].ID != created.ID ||
+		!reflect.DeepEqual(
+			result.AccessKeys[0].Models,
+			[]string{"client-allowed", "upstream-allowed"},
+		) ||
 		result.CurrentAccessKey == nil || result.CurrentAccessKey.ID != created.ID {
 		t.Fatalf("ReadAccessKeyHomeBase() = %#v", result)
 	}

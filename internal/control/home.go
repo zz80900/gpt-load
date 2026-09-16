@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type HomeAccessKey struct {
 	Name      string              `json:"name"`
 	MaskedKey string              `json:"masked_key"`
 	Protocols []protocol.Protocol `json:"protocols"`
+	Models    []string            `json:"models"`
 }
 
 type HomeBase struct {
@@ -179,7 +181,7 @@ func (s *Service) readHomeBase(
 			return HomeBase{}, app_errors.ErrUnauthorized
 		}
 	}
-	accessKeys, err := mapHomeAccessKeys(accessKeyRows)
+	accessKeys, err := mapHomeAccessKeys(accessKeyRows, snapshot)
 	if err != nil {
 		return HomeBase{}, err
 	}
@@ -249,14 +251,7 @@ func (s *Service) readHomeRows(
 		if err := tx.Model(&models.Group{}).Count(&result.groupCount).Error; err != nil {
 			return fmt.Errorf("count home groups: %w", err)
 		}
-		if err := tx.Model(&models.Credential{}).
-			Select(
-				"credentials.id", "credentials.group_id", "groups.channel_id", "groups.connection_type", "groups.params",
-				"credentials.fingerprint", "credentials.identity_fingerprint", "credentials.secret_version", "credentials.status",
-			).
-			Joins("JOIN groups ON groups.id = credentials.group_id").
-			Order("credentials.id ASC").
-			Find(&result.credentials).Error; err != nil {
+		if err := homeCredentialRowsScope(tx).Find(&result.credentials).Error; err != nil {
 			return fmt.Errorf("query home credentials: %w", err)
 		}
 		if err := tx.Model(&models.AccessKey{}).
@@ -288,6 +283,22 @@ func modelMatchesNameFilter(model state.ModelConfig, allowed map[string]struct{}
 		}
 	}
 	return false
+}
+
+func homeCredentialRowsScope(db *gorm.DB) *gorm.DB {
+	homeGroups := db.Session(&gorm.Session{NewDB: true}).
+		Model(&models.Group{}).
+		Select("id", "channel_id", "connection_type", "params")
+	return db.Model(&models.Credential{}).
+		Select(
+			"credentials.id", "credentials.group_id", "home_groups.channel_id", "home_groups.connection_type", "home_groups.params",
+			"credentials.fingerprint", "credentials.identity_fingerprint", "credentials.secret_version", "credentials.status",
+		).
+		Joins(
+			"JOIN (?) AS home_groups ON home_groups.id = credentials.group_id",
+			homeGroups,
+		).
+		Order("credentials.id ASC")
 }
 
 func countHomeModels(snapshot *state.ConfigSnapshot) int64 {
@@ -347,6 +358,8 @@ func countScopedHomeModels(
 	allowedGroups map[uint]struct{},
 	accessKey state.AccessKeyView,
 ) int64 {
+	// 按上游模型去重而不是按对外名称：一个模型配置 N 个别名时，按名称计数会
+	// 把一个模型算成 N+1 个，与「有多少个模型」的语义不符。
 	models := make(map[string]struct{})
 	for groupID := range allowedGroups {
 		group, exists := snapshot.Groups[groupID]
@@ -366,6 +379,37 @@ func countScopedHomeModels(
 		}
 	}
 	return int64(len(models))
+}
+
+// scopedHomeModelNames 返回该访问密钥可见的全部对外模型名，供首页卡片展示。
+// 名称口径与 /v1/models 一致：模型的任一名称通过过滤后，它的全部对外名都算可用。
+func scopedHomeModelNames(
+	snapshot *state.ConfigSnapshot,
+	allowedGroups map[uint]struct{},
+	accessKey state.AccessKeyView,
+) []string {
+	names := make(map[string]struct{})
+	for groupID := range allowedGroups {
+		group, exists := snapshot.Groups[groupID]
+		if !exists {
+			continue
+		}
+		for _, model := range group.Models {
+			if len(accessKey.Filters.Models) > 0 &&
+				!modelMatchesNameFilter(model, accessKey.Filters.Models) {
+				continue
+			}
+			for _, name := range state.ExternalModelNames(model) {
+				names[name] = struct{}{}
+			}
+		}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func countHomeCredentials(
@@ -487,7 +531,10 @@ func countAvailableHomeCredentialsInGroups(
 	return available, nil
 }
 
-func mapHomeAccessKeys(rows []homeAccessKeyRow) ([]HomeAccessKey, error) {
+func mapHomeAccessKeys(
+	rows []homeAccessKeyRow,
+	snapshot *state.ConfigSnapshot,
+) ([]HomeAccessKey, error) {
 	result := make([]HomeAccessKey, 0, len(rows))
 	for _, row := range rows {
 		if uint64(row.ID) > uint64(maxSafeInteger) {
@@ -518,10 +565,24 @@ func mapHomeAccessKeys(rows []homeAccessKeyRow) ([]HomeAccessKey, error) {
 		} else {
 			protocols = append([]protocol.Protocol(nil), protocols...)
 		}
+		accessKey, exists := snapshot.AccessKeysByID[row.ID]
+		if !exists || accessKey.Status != state.AccessKeyStatusActive {
+			return nil, fmt.Errorf(
+				"map home access key %d: runtime configuration mismatch: %w",
+				row.ID,
+				app_errors.ErrInternalServer,
+			)
+		}
+		models := scopedHomeModelNames(
+			snapshot,
+			accessibleHomeGroups(snapshot, accessKey),
+			accessKey,
+		)
 		result = append(result, HomeAccessKey{
 			ID: row.ID, Name: row.Name,
 			MaskedKey: maskedAccessKey(row.KeyPrefix, row.KeySuffix),
 			Protocols: protocols,
+			Models:    models,
 		})
 	}
 	return result, nil
