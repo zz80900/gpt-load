@@ -3,7 +3,6 @@ import { InvalidResponseError } from '@shared/http/errors'
 import { boolean, integer, list, oneOf, record, text } from './response'
 import { readModelCandidates } from './model-discovery'
 import type { ProxyOverride } from './group-create'
-import { readModelAliases } from './group-create'
 import { sortProtocols } from '@modern/i18n/protocols'
 import { readObservation, type CredentialObservation } from './credential-observation'
 import { readGroupBasics, type GroupBasics } from './groups'
@@ -164,7 +163,7 @@ export async function getGroupModels(client: ApiClient, id: number, signal: Abor
 export async function saveGroupModels(
   client: ApiClient,
   id: number,
-  models: readonly { id: string; alias: string }[],
+  models: readonly { id: string; aliases: string[] }[],
   signal: AbortSignal,
 ) {
   return readModels(
@@ -172,10 +171,7 @@ export async function saveGroupModels(
       method: 'PUT',
       signal,
       json: {
-        models: models.map((model) => ({
-          id: model.id.trim(),
-          aliases: readModelAliases(model.alias),
-        })),
+        models: models.map((model) => ({ id: model.id.trim(), aliases: model.aliases })),
       },
     }),
   )

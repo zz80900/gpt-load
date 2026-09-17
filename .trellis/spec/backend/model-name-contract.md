@@ -21,7 +21,7 @@ The split only became load-bearing once wildcard aliases arrived. Before that,
 
 | Set | Owner | Audience | Shape |
 | --- | --- | --- | --- |
-| `ExternalModelNames` | `internal/state/snapshot.go` | The wire contract: `client_models` in `GetGroupModels`, which `groups.ts` asserts item by item | Exactly `[id, ...aliases]`. **Derived names must never appear here, and patterns must not be filtered out of it.** |
+| `ExternalModelNames` | `internal/state/snapshot.go` | The wire contract: `client_models` in `GetGroupModels`, which classic's `frontends/classic/app/resources/groups.ts` asserts item by item | Exactly `[id, ...aliases]`. **Derived names must never appear here, and patterns must not be filtered out of it.** |
 | `RoutableModelNames` | `internal/state/snapshot.go` | Conflict detection only: write path (`normalizeGroupModels`) and compile time (`validateCompileInput`). It does **not** feed the routing index or any display surface | `ExternalModelNames` with each item immediately followed by its context-suffix base, de-duplicated. Patterns appear verbatim |
 | Concrete filters | `internal/state/snapshot.go` | Every display/selection surface: group-options candidates, model page, price counts, dashboard, client-config generator | `ConcreteModelNames` / `ConcreteRoutableModelNames` — the two sets above minus wildcard patterns. **This is the set `/v1/models` agrees with**, not `RoutableModelNames`. |
 | `ExecutionCandidates` / `ExecutionRouteCatalog` keys | `internal/state/snapshot.go` | Routing index (exact lookup), `/v1/models` listing | The **concrete** names only, taken from `ConcreteRoutableModelNames`. A name containing `*` is never a key here. |
@@ -46,7 +46,8 @@ Go   state.ExternalModelNames(model ModelConfig) []string
      modelname.Match(pattern, name string) bool
      modelname.PatternSpecificity(pattern string) (prefixLen, literalCount int)
      var modelname.ContextSuffixes = [...]string{"[1M]", "[1m]"}
-JSON client_models: [id, ...aliases]            // groups.ts asserts this exactly
+JSON client_models: [id, ...aliases]            // classic groups.ts asserts this exactly
+TS   web/src/shared/models/model-aliases.ts      // frontend alias logic, single source (see below)
 ```
 
 `internal/modelname` deliberately imports nothing from `gpt-load/internal`.
@@ -231,10 +232,41 @@ if len(routes) == 0 && query.externalModel != nil {
 names := state.ConcreteRoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 ```
 
+### Frontend alias logic: one shared module
+
+All pure model-alias logic on the frontend has exactly one definition:
+`web/src/shared/models/model-aliases.ts` (`normalizeAliases`, `visibleAliases`,
+`withClaudeAdapter` / `hasClaudeAdapter` / `isClaudeAdapterAlias`,
+`findModelNameConflicts`, `indexesWithConflicts`, `indexesWithEmptyIDs`,
+`modelDraftValidity`). Classic re-exports it from
+`frontends/classic/features/models/model-draft.ts`; modern imports it as
+`@shared/models/model-aliases`. Neither frontend may grow a second
+implementation — the same "one key, one definition" rule as
+`priceAssociationKey` below.
+
+- The module takes a minimal structural type `{ id: string; aliases?: string[] }`
+  and imports nothing from either frontend's API layer, so it stays loadable
+  from both frontends and their tests.
+- `findModelNameConflicts` replicates the backend collision policy of
+  `validateGroupCollectionModels` / `normalizeGroupModels`: the same name
+  claimed across two different upstream IDs is a conflict; several rows of one
+  upstream ID may repeat a name ("one model, several names"). Change one side,
+  check the other.
+- The Claude adapter toggle is **derived, never persisted**: its state is the
+  presence of `claudeAdapterAlias` in `aliases`, and toggling writes the
+  constant in or out via `withClaudeAdapter`. Group-level mutual exclusion
+  (enabling one row disables the others) is a frontend convenience layered on
+  top of the backend same-pattern conflict rule — it must not be reimplemented
+  as persisted state.
+- Known deliberate divergence, do not "fix" one side silently: modern's
+  `setAliases` treats a hand-typed `claude-*[1m]` as enabling the toggle (OR of
+  incoming and current state), while classic's older editor silently drops a
+  hand-typed constant when the toggle is off. Aligning them is an open decision.
+
 ### Count contract: the numbers beside the association rows
 
 `GetUpstreamModelDetail` returns association rows plus four counts, and
-`web/src/app/resources/models.ts` asserts exact relations between all of them in
+`web/src/frontends/classic/app/resources/models.ts` asserts exact relations between all of them in
 a single `if`. Each count answers a different question; conflating them is what
 produced the defect this section replaces.
 

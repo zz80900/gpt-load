@@ -8,7 +8,8 @@ import { discoverGroupModels } from '@modern/api/group-detail'
 import type { ModelCandidate } from '@modern/api/model-discovery'
 import { AppButton, AppConfirmDialog, AppNotice, AppSegmentedControl } from '@modern/components/ui'
 import { useApiClient } from '@shared/http/client-context'
-import { modelErrors, type GroupDraftModel } from './group-create-rules'
+import { findModelNameConflicts, visibleAliases } from '@shared/models/model-aliases'
+import type { GroupDraftModel } from './group-create-rules'
 
 const props = defineProps<{ groupId: number; models: readonly GroupDraftModel[] }>()
 const emit = defineEmits<{ close: []; confirm: [models: GroupDraftModel[]] }>()
@@ -52,6 +53,7 @@ const removals = computed(() =>
     ? []
     : current.filter((model) => !live.value.some((item) => item.id === model.id.trim())),
 )
+// 合并结果保留每行的既有别名（含隐藏的 claude-*[1m]，开关状态随之保留），增补行无别名。
 const next = computed<GroupDraftModel[]>(() => {
   const removed = new Set(removals.value.map((model) => model.key))
   let key = Math.max(-1, ...current.map((model) => model.key)) + 1
@@ -59,22 +61,16 @@ const next = computed<GroupDraftModel[]>(() => {
     ...current.filter((model) => !removed.has(model.key)),
     ...additions.value.map((model) => ({
       id: model.id,
-      alias: '',
+      aliases: [],
       key: key++,
       origin: 'discovery' as const,
     })),
   ]
 })
-const conflicts = computed(() => {
-  const errors = modelErrors(next.value)
-  return [
-    ...new Set(
-      next.value
-        .filter((model) => errors.has(model.key))
-        .map((model) => model.alias.trim() || model.id.trim()),
-    ),
-  ]
-})
+// 冲突口径与后端一致：跨上游认领同名才冲突，同一上游多行重复认领同名放行。
+const conflicts = computed(() =>
+  findModelNameConflicts(next.value).map((conflict) => conflict.client_model),
+)
 async function load(): Promise<void> {
   controller?.abort()
   const request = new AbortController()
@@ -135,7 +131,9 @@ onScopeDispose(() => controller?.abort())
         <section class="modern-model-sync-removals">
           <h3>{{ t('groupWorkflows.removals', { count: n(removals.length) }) }}</h3>
           <ul>
-            <li v-for="model in removals" :key="model.key">{{ model.alias || model.id }}</li>
+            <li v-for="model in removals" :key="model.key">
+              {{ visibleAliases(model.aliases)[0] ?? model.id }}
+            </li>
           </ul>
         </section>
       </div>

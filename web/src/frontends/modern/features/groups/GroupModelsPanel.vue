@@ -53,7 +53,8 @@ const discoveryError = ref('')
 const picker = ref<InstanceType<typeof GroupModelPicker>>()
 const controller = new AbortController()
 let discovery: AbortController | undefined
-const signature = () => JSON.stringify(draft.value.map(({ id, alias }) => ({ id, alias })))
+// 服务端返回的 aliases 已含 claude-*[1m]，Claude 适配开关状态完全由它推导，不另存字段。
+const signature = () => JSON.stringify(draft.value.map(({ id, aliases }) => ({ id, aliases })))
 const dirty = computed(() => initialized.value && signature() !== baseline.value)
 watch(
   query.data,
@@ -62,7 +63,7 @@ watch(
     draft.value = models.map((model, key) => ({
       key,
       id: model.id,
-      alias: model.aliases.join(', '),
+      aliases: model.aliases,
       origin: 'configured',
     }))
     baseline.value = signature()

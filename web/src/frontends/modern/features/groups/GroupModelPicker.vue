@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ListChecks, Plus, Search, Trash2 } from '@lucide/vue'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ModelCandidate } from '@modern/api/model-discovery'
 import {
@@ -9,14 +9,24 @@ import {
   AppIconButton,
   AppListFrame,
   AppPagination,
+  AppSwitch,
+  AppTagInput,
   AppTextField,
 } from '@modern/components/ui'
 import { useURLState, positivePage } from '@modern/app/url-state'
 import { useLoadingActivity, useLoadingFeedback } from '@modern/components/ui/loading'
+import { hasClaudeAdapter, visibleAliases } from '@shared/models/model-aliases'
 import ModelSelectionDialog from '../models/ModelSelectionDialog.vue'
 import ModelSourceBadges from '../models/ModelSourceBadges.vue'
 import ModelPriceBadge from '../models/ModelPriceBadge.vue'
-import { modelErrors, type GroupDraftModel } from './group-create-rules'
+import {
+  modelErrors,
+  setAliases,
+  setClaudeAdapter,
+  type GroupDraftModel,
+  type ModelColumn,
+  type ModelDraftError,
+} from './group-create-rules'
 
 const props = defineProps<{
   layout?: 'form' | 'list'
@@ -76,7 +86,12 @@ const pageSize = computed({
   },
 })
 const list = ref<InstanceType<typeof AppListFrame>>()
-const fields = new Map<number, { focus(): void; $el?: HTMLElement }>()
+const instanceId = useId()
+// 每行三列可聚焦控件：ID 输入、别名 tag 输入、Claude 适配开关。AppTextField/AppTagInput
+// 暴露 focus()；AppSwitch 不暴露，只能落在组件根元素上（经 reka-ui 的 useForwardExpose
+// 转发为内层 button 的 $el），因此聚焦时先试 focus() 再退回 $el.focus()。
+type FocusableField = { focus?(): void; $el?: HTMLElement }
+const fields = new Map<number, Partial<Record<ModelColumn, FocusableField>>>()
 const filtering = ref(false)
 const feedback = useLoadingFeedback(filtering)
 let trigger: HTMLElement | undefined
@@ -88,11 +103,30 @@ const candidatesByID = computed(
 const filtered = computed(() => {
   const terms = search.value.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean)
   return models.value.filter((model) =>
-    terms.every((term) => [model.id, model.alias].join(' ').toLocaleLowerCase().includes(term)),
+    terms.every((term) =>
+      [model.id, visibleAliases(model.aliases).join(' ')].join(' ').toLocaleLowerCase().includes(term),
+    ),
   )
 })
+function columnErrorText(model: GroupDraftModel, column: ModelColumn): string {
+  if (!props.attempted) return ''
+  const error: ModelDraftError | undefined = errors.value.get(model.key)
+  if (error?.column !== column) return ''
+  if (column === 'claude') return t('groupCreate.claudeAdapterConflict')
+  if (column === 'id' && !error.name) return t('groupCreate.modelIDRequired')
+  return t('groupCreate.modelConflict', { name: error.name })
+}
 const rows = computed(() =>
-  filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value),
+  filtered.value
+    .slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+    .map((model) => ({
+      model,
+      errors: {
+        id: columnErrorText(model, 'id'),
+        alias: columnErrorText(model, 'alias'),
+        claude: columnErrorText(model, 'claude'),
+      },
+    })),
 )
 
 watch([search, page, pageSize], async () => {
@@ -127,25 +161,29 @@ watch(
   },
   { immediate: true },
 )
-function fieldRef(key: number, element: unknown): void {
-  if (element && typeof element === 'object' && 'focus' in element)
-    fields.set(key, element as { focus(): void; $el?: HTMLElement })
+function fieldRef(key: number, column: ModelColumn, element: unknown): void {
+  const entry = fields.get(key) ?? {}
+  if (element && typeof element === 'object' && ('focus' in element || '$el' in element))
+    entry[column] = element as FocusableField
+  else delete entry[column]
+  if (Object.keys(entry).length) fields.set(key, entry)
   else fields.delete(key)
 }
 function nextModel(id: string, origin: GroupDraftModel['origin']): GroupDraftModel {
-  return { key: nextKey++, id, alias: '', origin }
+  return { key: nextKey++, id, aliases: [], origin }
 }
 function reserveKeys(): void {
   for (const model of models.value) nextKey = Math.max(nextKey, model.key + 1)
 }
-async function focusModel(model: GroupDraftModel): Promise<void> {
+async function focusModel(model: GroupDraftModel, column: ModelColumn = 'id'): Promise<void> {
   search.value = ''
   await nextTick()
   page.value =
     Math.floor(models.value.findIndex((item) => item.key === model.key) / pageSize.value) + 1
   await nextTick()
-  const field = fields.get(model.key)
-  field?.focus()
+  const field = fields.get(model.key)?.[column]
+  if (typeof field?.focus === 'function') field.focus()
+  else field?.$el?.focus()
   field?.$el?.scrollIntoView({ block: 'nearest' })
 }
 async function addManual(): Promise<void> {
@@ -178,17 +216,17 @@ function addCandidates(candidates: ModelCandidate[]): void {
   ]
   void closeSelection()
 }
-function update(key: number, field: 'id' | 'alias', value: string): void {
+function updateRow(key: number, patch: Partial<Pick<GroupDraftModel, 'id' | 'aliases'>>): void {
   models.value = models.value.map((model) =>
     model.key === key
-      ? { ...model, [field]: value, ...(field === 'id' ? { origin: 'manual' as const } : {}) }
+      ? { ...model, ...patch, ...('id' in patch ? { origin: 'manual' as const } : {}) }
       : model,
   )
 }
 defineExpose({
   focusFirstInvalid: async () => {
     const model = models.value.find((item) => errors.value.has(item.key))
-    if (model) await focusModel(model)
+    if (model) await focusModel(model, errors.value.get(model.key)?.column ?? 'id')
   },
 })
 useLoadingActivity(() => filtering.value || props.loading)
@@ -251,7 +289,8 @@ useLoadingActivity(() => filtering.value || props.loading)
       <template v-if="models.length" #header>
         <div class="modern-create-model-labels" aria-hidden="true">
           <span>{{ t('groupCreate.modelID') }}</span
-          ><span>{{ t('groupCreate.alias') }}</span>
+          ><span>{{ t('groupCreate.alias') }}</span
+          ><span>{{ t('groupCreate.claudeAdapter') }}</span>
         </div>
       </template>
       <AppCollectionState
@@ -262,39 +301,70 @@ useLoadingActivity(() => filtering.value || props.loading)
         {{ t(models.length ? 'modelSelection.empty' : 'groupCreate.modelsOptional') }}
       </p>
       <div v-else class="modern-create-model-rows">
-        <div v-for="model in rows" :key="model.key" class="modern-create-model-row">
+        <div
+          v-for="{ model, errors: rowErrors } in rows"
+          :key="model.key"
+          class="modern-create-model-row"
+        >
           <AppTextField
-            :ref="(element) => fieldRef(model.key, element)"
+            :ref="(element) => fieldRef(model.key, 'id', element)"
             :model-value="model.id"
             :label="t('groupCreate.modelID')"
             label-hidden
             :disabled="disabled"
-            :error="
-              attempted && errors.get(model.key) === 'id'
-                ? t('groupCreate.modelIDRequired')
-                : undefined
-            "
+            :error="rowErrors.id || undefined"
             autocomplete="off"
             spellcheck="false"
             size="sm"
-            @update:model-value="update(model.key, 'id', $event)"
+            @update:model-value="updateRow(model.key, { id: $event })"
           />
-          <AppTextField
-            :model-value="model.alias"
-            :label="t('groupCreate.alias')"
-            label-hidden
-            :placeholder="t('groupCreate.aliasOptional')"
-            :disabled="disabled"
-            :error="
-              attempted && errors.get(model.key) === 'duplicate'
-                ? t('groupCreate.modelConflict')
-                : undefined
-            "
-            autocomplete="off"
-            spellcheck="false"
-            size="sm"
-            @update:model-value="update(model.key, 'alias', $event)"
-          />
+          <div class="modern-create-model-alias">
+            <AppTagInput
+              :ref="(element) => fieldRef(model.key, 'alias', element)"
+              :model-value="visibleAliases(model.aliases)"
+              :label="t('groupCreate.alias')"
+              :placeholder="t('groupCreate.aliasPlaceholder')"
+              :remove-label="(alias: string) => t('groupCreate.removeAlias', { alias })"
+              :disabled="disabled"
+              :invalid="Boolean(rowErrors.alias)"
+              :described-by="
+                rowErrors.alias ? `${instanceId}-alias-error-${model.key}` : undefined
+              "
+              autocomplete="off"
+              spellcheck="false"
+              @update:model-value="models = setAliases(models, model.key, $event)"
+            />
+            <p
+              v-if="rowErrors.alias"
+              :id="`${instanceId}-alias-error-${model.key}`"
+              class="modern-create-model-error"
+              role="alert"
+            >
+              {{ rowErrors.alias }}
+            </p>
+          </div>
+          <div class="modern-create-model-claude">
+            <AppSwitch
+              :ref="(element) => fieldRef(model.key, 'claude', element)"
+              :model-value="hasClaudeAdapter(model.aliases)"
+              :label="
+                t('groupCreate.claudeAdapterFor', {
+                  id: model.id || t('groupCreate.modelID'),
+                })
+              "
+              size="sm"
+              :disabled="disabled"
+              @update:model-value="models = setClaudeAdapter(models, model.key, $event)"
+            />
+            <p
+              v-if="rowErrors.claude"
+              :id="`${instanceId}-claude-error-${model.key}`"
+              class="modern-create-model-error"
+              role="alert"
+            >
+              {{ rowErrors.claude }}
+            </p>
+          </div>
           <AppIconButton
             :icon="Trash2"
             :label="t('groupCreate.removeModel', { name: model.id || t('groupCreate.modelID') })"
@@ -411,7 +481,7 @@ useLoadingActivity(() => filtering.value || props.loading)
 .modern-create-model-labels,
 .modern-create-model-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) var(--modern-control-sm);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) max-content var(--modern-control-sm);
   gap: var(--modern-space-2);
   align-items: start;
 }
@@ -424,6 +494,23 @@ useLoadingActivity(() => filtering.value || props.loading)
   display: grid;
   padding: var(--modern-space-1);
   gap: var(--modern-space-3);
+}
+/* 别名列可换行堆叠多个 tag，开关列只放一个 AppSwitch；两列各自承载分列错误文本。 */
+.modern-create-model-alias,
+.modern-create-model-claude {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--modern-space-1);
+}
+.modern-create-model-claude {
+  min-width: max-content;
+}
+.modern-create-model-error {
+  color: var(--modern-danger);
+  font-size: var(--modern-font-size-small);
+  line-height: var(--modern-leading-body);
+  overflow-wrap: anywhere;
 }
 .modern-create-model-evidence {
   grid-column: 1 / -1;
@@ -451,7 +538,8 @@ useLoadingActivity(() => filtering.value || props.loading)
 @media (max-width: 760px) {
   .modern-create-model-labels,
   .modern-create-model-row {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) var(--modern-touch-target);
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) max-content
+      var(--modern-touch-target);
   }
 }
 </style>

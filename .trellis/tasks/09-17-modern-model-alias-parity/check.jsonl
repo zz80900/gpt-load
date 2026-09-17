@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/09-17-modern-model-alias-parity/prd.md", "reason": "验收标准 AC1-AC9 的核对依据，特别是：同 ID 多行可重复认领同名不报错（AC5）、开关互斥与手输 claude-*[1M] 两种形态（AC3/AC4）、classic 行为零变化（AC8）。"}
+{"file": ".trellis/tasks/09-17-modern-model-alias-parity/design.md", "reason": "检查实现与设计偏差：shared 文件是否零 classic 依赖、classic 是否只做 re-export、modelErrors 列归属规则、setAliases 是否先合并开关状态、三个入口是否全部覆盖。"}
+{"file": ".trellis/spec/backend/model-name-contract.md", "reason": "核对前端 normalizeAliases/findModelNameConflicts 与服务端 normalizeModelAliases/validateGroupCollectionModels 口径一致：跨 ID 同名冲突、同 ID 重复认领放行、[1M]/[1m] 等价。"}
+{"file": "web/src/frontends/classic/features/models/model-draft.ts", "reason": "确认 re-export 后导出面与调用点不变：grep classic 内所有 from './model-draft' / '@/features/models/model-draft' 引用是否仍编译。"}
+{"file": "web/scripts/check-modern-styles.mjs", "reason": "复查新组件位置（components/ui/ 而非 features/）、无原生表单标签泄漏进 features/、token 与断点合规。"}

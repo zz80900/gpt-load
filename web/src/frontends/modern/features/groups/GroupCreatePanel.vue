@@ -9,7 +9,6 @@ import { useI18n } from 'vue-i18n'
 import {
   discoverGroupDraftModels,
   getGroupChannels,
-  readModelAliases,
   type GroupConnectionDraft,
   type GroupCreateRequest,
   type GroupCreateResult,
@@ -288,10 +287,7 @@ function request(): GroupCreateRequest {
       : { connection_type: 'api_key' as const, credentials: credentials.value }),
     ...(name.value.trim() ? { name: name.value.trim() } : {}),
     price_multiplier: price.value.trim(),
-    models: models.value.map((model) => ({
-      id: model.id.trim(),
-      aliases: readModelAliases(model.alias),
-    })),
+    models: models.value.map((model) => ({ id: model.id.trim(), aliases: model.aliases })),
     confirm_same_target: false,
   }
 }

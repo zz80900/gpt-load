@@ -118,20 +118,9 @@ export async function getGroupChannels(
 }
 export interface ModelDraft {
   id: string
-  // alias 是编辑框里的原始文本：一个上游模型可以对外暴露多个名称，编辑框用逗号
-  // 分隔承载，提交前统一交给 readModelAliases 拆分。
-  alias: string
-}
-// 别名编辑框允许一次填写多个名称，逗号分隔后去空去重；空文本表示该模型没有别名。
-export function readModelAliases(alias: string): string[] {
-  return [
-    ...new Set(
-      alias
-        .split(',')
-        .map((name) => name.trim())
-        .filter(Boolean),
-    ),
-  ]
+  // 一个上游模型可以对外暴露多个别名；编辑界面按 tag 列表维护，提交前经
+  // @shared/models/model-aliases 的 normalizeAliases 规范化（trim、去空、去 ID、去重）。
+  aliases: string[]
 }
 export type ProxyOverride = { mode: 'direct' } | { mode: 'custom'; url: string }
 export interface GroupConnectionDraft {

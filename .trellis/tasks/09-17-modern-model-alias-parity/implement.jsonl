@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/09-17-modern-model-alias-parity/prd.md", "reason": "本任务的需求与验收标准（R1-R8、AC1-AC9）：多别名 tag 编辑、通配符、Claude 适配开关（组内互斥）、冲突判定口径、覆盖 modern 三个入口、逻辑单源到 @shared。"}
+{"file": ".trellis/tasks/09-17-modern-model-alias-parity/design.md", "reason": "技术设计：shared 平移清单、AppTagInput 组件契约、ModelDraft 形状改造、规则层 API（modelErrors 列归属/setClaudeAdapter/setAliases）、三个入口的适配点、i18n 文案清单。实现前必须通读。"}
+{"file": ".trellis/spec/backend/model-name-contract.md", "reason": "名称契约的事实来源：ExternalModelNames/RoutableModelNames/候选集分工、上下文后缀派生、冲突策略。前端 normalizeAliases 与 findModelNameConflicts 必须与其中的服务端口径一致（spec 第 231 行给出了规范调用形态）。"}
+{"file": "web/src/frontends/classic/features/models/model-draft.ts", "reason": "平移源：claudeAdapterAlias/isClaudeAdapterAlias/hasClaudeAdapter/visibleAliases/withClaudeAdapter/normalizeAliases/findModelNameConflicts/modelDraftValidity 的唯一现有实现及其注释，逐字平移到 shared。"}
+{"file": "web/src/frontends/classic/components/ui/TagInput.vue", "reason": "AppTagInput 的交互蓝本：Enter/分隔符/退格/粘贴/失焦的完整行为与注释，modern 版必须同口径。"}
+{"file": "web/src/frontends/classic/features/models/ModelAliasEditor.vue", "reason": "列归属与互斥的参考实现：modelIDError/modelAliasError/claudeAdapterError 的归属规则、setAliases 先合并开关状态再规范化、setClaudeAdapter 的互斥写回。"}
+{"file": "web/src/frontends/modern/features/groups/GroupModelPicker.vue", "reason": "改造主体：当前三列布局、update(key,field)、errors.get() === 'id'|'duplicate' 的错误呈现、focusFirstInvalid。"}
+{"file": "web/src/frontends/modern/features/groups/group-create-rules.ts", "reason": "重写对象：现 modelErrors 是上次合并的简化版（Map<key,'id'|'duplicate'>），需替换为带列归属与冲突名的版本。"}
+{"file": "web/scripts/check-modern-styles.mjs", "reason": "硬约束：modern features/ 禁原生 button/input/select/textarea/svg；token 与断点来源校验。新组件必须放 components/ui/。"}

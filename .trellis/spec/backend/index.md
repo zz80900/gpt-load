@@ -17,7 +17,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | Partial |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | Partial |
 | [Request Log Pipeline](./request-log-pipeline.md) | Six-layer field contract for request logs | Filled |
-| [Model Name Contract](./model-name-contract.md) | Three name sets, context-suffix canonicalization, collision policy, detail-response count contract | Filled |
+| [Model Name Contract](./model-name-contract.md) | Three name sets, context-suffix canonicalization, collision policy, detail-response count contract, frontend shared alias module | Filled |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
