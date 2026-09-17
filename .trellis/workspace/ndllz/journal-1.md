@@ -94,3 +94,25 @@ Claude Code 从 /v1/models 读到 xxxx[1M] 判定为 1M 上下文模型，发起
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: 上游合并与 modern 前端多别名功能同步
+
+**Date**: 2026-09-17
+**Task**: 上游合并与 modern 前端多别名功能同步
+**Branch**: `main`
+
+### Summary
+
+合并 upstream/main 四个新提交（双前端架构/分组用量索引/身份分组过滤器/登录吉祥物），迁移编号顺延保住已发布的 0015，control 层与 modern API 层适配多别名契约；随后以 Trellis 任务 09-17-modern-model-alias-parity 把多别名/通配符/Claude 适配开关完整同步到 modern 前端：别名纯逻辑单源到 web/src/shared/models/model-aliases.ts（classic 改 re-export），新增 AppTagInput 组件，GroupModelPicker 四列布局，三入口适配 {id, aliases} 形状，三语文案；spec 登记前端单源条款。type-check/lint/build 全绿，后端零改动。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1000c41b` | (see git log) |
+| `a5030fc0` | (see git log) |
+
+### Status
+
+[OK] **Completed**
