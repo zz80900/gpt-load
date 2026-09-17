@@ -54,6 +54,9 @@ type GroupCollectionItem struct {
 
 type groupCollectionRecord struct {
 	GroupCollectionItem
+	Enabled                    bool
+	Weight                     int
+	ModelNames                 []string
 	CreatedAtMS                int64
 	LastActiveAtMS             *int64
 	LastActiveHourRequestCount int64
@@ -364,6 +367,20 @@ func mapGroupCollectionRecords(
 				ModelCount:     int64(len(groupModels)),
 			},
 			CreatedAtMS: group.CreatedAtMS,
+			Enabled:     group.Enabled,
+			Weight:      state.ConfiguredWeight(group.WeightManual),
+			ModelNames:  make([]string, 0, len(groupModels)),
+		}
+		for _, model := range groupModels {
+			// 通配符别名匹配的是无穷集合，不能进入可选名称列表；这里给出的是客户端
+			// 真正能枚举到的具体名称，与模型页、价格引用计数保持同一口径。
+			record.ModelNames = append(
+				record.ModelNames,
+				state.ConcreteRoutableModelNames(state.ModelConfig{
+					ID:      model.ID,
+					Aliases: model.Aliases,
+				})...,
+			)
 		}
 		if activity, exists := activityByGroup[group.ID]; exists {
 			lastActiveAtMS := activity.LastActiveAtMS
