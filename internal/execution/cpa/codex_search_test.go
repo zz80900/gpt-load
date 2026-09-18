@@ -96,14 +96,14 @@ func TestCodexStandaloneSearchGateway(t *testing.T) {
 		Groups: []state.GroupConfig{{
 			ID: credential.GroupID, Name: "codex", ChannelID: channel.Codex,
 			ConnectionType: "subscription", Params: json.RawMessage(`{}`),
-			Models: []state.ModelConfig{{ID: "gpt-5", Alias: "public"}}, Enabled: true,
+			Models: []state.ModelConfig{{ID: "gpt-5", Aliases: []string{"public"}}}, Enabled: true,
 			Settings: config.Settings{state.SettingParameterOverrides: []any{
 				map[string]any{"set": map[string]any{"temperature": 0.25}},
 			}},
 		}, {
 			ID: credential.GroupID + 1, Name: "openai", ChannelID: channel.OpenAI,
 			ConnectionType: "api_key", Params: json.RawMessage(`{}`),
-			Models: []state.ModelConfig{{ID: "gpt-5", Alias: "public"}}, Enabled: true,
+			Models: []state.ModelConfig{{ID: "gpt-5", Aliases: []string{"public"}}}, Enabled: true,
 		}},
 		Credentials: []state.CredentialConfig{{
 			ID: ref.ID, GroupID: ref.GroupID, Status: state.CredentialStatusActive,
