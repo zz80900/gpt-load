@@ -137,3 +137,24 @@ Claude Code 从 /v1/models 读到 xxxx[1M] 判定为 1M 上下文模型，发起
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: 分组排序：未启用置后，发布 zz.11
+
+**Date**: 2026-09-20
+**Task**: 分组排序：未启用置后，发布 zz.11
+**Branch**: `main`
+
+### Summary
+
+modern 分组列表此前只在 priority 模式把未启用分组置后，默认的 recent 与 name 视图下仍混在中间。在排序比较器最前加一层暂停分区（复用既有 isPaused，口径为禁用或权重 0），三种模式统一置后，原有三条比较规则未动故 priority 无行为变化。发布 v2.0.0-zz.11 并挪动 latest。前端无测试设施，行为正确性靠逐分支真值表验证。检查中另发现 usage/access-keys 的分组下拉仍未置后，属产品一致性缺口，未擅自扩大范围。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a194b16` | (see git log) |
+
+### Status
+
+[OK] **Completed**
