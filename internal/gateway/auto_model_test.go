@@ -132,7 +132,7 @@ func TestAutoModelWebsocketPrewarmDoesNotFreezeLaterTask(t *testing.T) {
 			}))
 			defer upstream.Close()
 			handler, engine, input := websocketTestHandler(t, upstream.URL+"/v1", channel.OpenAI)
-			input.Groups[0].Models = append(input.Groups[0].Models, state.ModelConfig{ID: "upstream-strong", Alias: "strong"})
+			input.Groups[0].Models = append(input.Groups[0].Models, state.ModelConfig{ID: "upstream-strong", Aliases: []string{"strong"}})
 			config := automodel.DefaultConfig()
 			config.Enabled, config.APIKey = true, "decision-secret"
 			config.Models = []automodel.Entry{{ID: "auto-web", Name: "auto-web", Enabled: true, Fallback: "balanced", Presets: []automodel.Preset{

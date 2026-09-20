@@ -367,7 +367,11 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 	ordinaryModels := map[string]struct{}{}
 	for _, group := range input.Groups {
 		for _, model := range group.Models {
-			ordinaryModels[externalModelName(model)] = struct{}{}
+			// 自动模型不能占用分组对外暴露的任何名字，别名也算占用，
+			// 因此这里用复数版把 ID 与全部别名一并登记。
+			for _, name := range ExternalModelNames(model) {
+				ordinaryModels[name] = struct{}{}
+			}
 		}
 	}
 	autoModels, err := automodel.Compile(autoConfig, ordinaryModels)
