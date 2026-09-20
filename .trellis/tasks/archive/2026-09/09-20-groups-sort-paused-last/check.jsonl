@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "复核 Pre-Modification Rule 是否执行到位：是否搜索过既有的 paused / rank 判定、有无遗漏的排序入口（例如同文件里的其它列表或 classic 的同类逻辑）"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "验收重点之一是复用而非重写：确认排序使用的判定与 isPaused 完全一致（禁用或权重 0），没有在视图内另造一份可用性判断"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "确认改动没有越界到后端或跨层契约；同时核对 modern 列表读取的 availability 取值集合，保证只对 paused 置后、其余可用性状态排序行为不变"}
