@@ -116,3 +116,24 @@ Claude Code 从 /v1/models 读到 xxxx[1M] 判定为 1M 上下文模型，发起
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: 私有迁移号段与上游隔离
+
+**Date**: 2026-09-20
+**Task**: 私有迁移号段与上游隔离
+**Branch**: `main`
+
+### Summary
+
+把 fork 自有迁移移出上游编号空间：上游迁移恢复原名原文照收，私有迁移改用 <上游当前编号>_zz_<名称> 锚定式命名；校验器由「编号==位置」改为「ID 严格字典序递增」；新增启动时幂等改写存量账本的兼容层（含 MySQL #building 恢复标记）。发布 v2.0.0-zz.10 并将 latest 挪至其上。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d84d30c` | (see git log) |
+
+### Status
+
+[OK] **Completed**
