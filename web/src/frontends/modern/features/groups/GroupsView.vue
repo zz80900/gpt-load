@@ -284,6 +284,8 @@ const filtered = computed(() => {
       return words.every((word) => text.includes(word))
     })
     .sort((a, b) => {
+      // 未启用（禁用或权重 0）的分组在任何排序模式下都置后，组内仍沿用该模式的次级规则。
+      if (isPaused(a) !== isPaused(b)) return isPaused(a) ? 1 : -1
       if (f.sort === 'priority' && rank(a) !== rank(b)) return rank(a) - rank(b)
       if (f.sort !== 'name' && a.lastActiveHour !== b.lastActiveHour)
         return (b.lastActiveHour ?? -1) - (a.lastActiveHour ?? -1)
