@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "验收基准：逐项核对「新增/改动迁移需联动的五处」是否全部同步，并确认该文件内的 0015_anthropic_betas 示例、三函数模板命名已随新约定更新"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "排查 runner（migration.go）↔ migrations 包常量 ↔ schema_migrations 账本 ↔ 各处测试断言 四层之间的 ID 契约一致性，确认改名后无一层残留旧值"}
+{"file": ".trellis/spec/guides/index.md", "reason": "复核阶段自检：AI 交叉复核的常见假阳性模式，以及 Pre-Modification Rule 是否执行到位（是否穷举搜索过旧 ID）"}
