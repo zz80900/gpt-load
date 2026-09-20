@@ -30,7 +30,7 @@ export function buildAccessKeyModelOptions(
 ): string[] {
   const values: string[] = []
   for (const group of selectAccessKeyGroups(groups, selectedGroupIDs)) {
-    values.push(...group.models)
+    values.push(...group.models, ...(group.auto_models ?? []))
   }
   values.push(...preserved)
   // 通配符别名不进候选：白名单在服务端按精确（含上下文后缀归一）匹配，选中一个模式

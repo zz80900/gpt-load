@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"gpt-load/internal/automodel"
 	"gpt-load/internal/channel"
 	"gpt-load/internal/execution"
 	"gpt-load/internal/pricing"
@@ -108,6 +109,8 @@ type ListQuery struct {
 	CostMaxNanoUSD      *int64
 	Limit               int
 	Cursor              *Cursor
+	Page                int
+	PageSize            int
 }
 
 type AccessKeyRef struct {
@@ -117,6 +120,8 @@ type AccessKeyRef struct {
 }
 
 type Record struct {
+	AutoDecision            *automodel.Decision
+	TotalPricing            telemetry.PricingObservation
 	RequestID               string
 	CompletedAtMS           int64
 	AccessKey               AccessKeyRef
@@ -161,6 +166,14 @@ type Record struct {
 type Page struct {
 	Items      []Record
 	NextCursor *Cursor
+	Pagination *Pagination
+}
+
+type Pagination struct {
+	Page       int
+	PageSize   int
+	TotalItems int64
+	TotalPages int64
 }
 
 type UsageGranularity string
