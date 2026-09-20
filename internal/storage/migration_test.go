@@ -26,10 +26,10 @@ func TestMigrationRegistryContainsOrderedMigrations(t *testing.T) {
 		migrationfiles.ID0012,
 		migrationfiles.ID0013,
 		migrationfiles.ID0014,
+		migrationfiles.ID0014ZZ,
 		migrationfiles.ID0015,
 		migrationfiles.ID0016,
 		migrationfiles.ID0017,
-		migrationfiles.ID0018,
 	}
 	if len(migrations) != len(wantIDs) {
 		t.Fatalf("migration registry length = %d, want %d", len(migrations), len(wantIDs))
@@ -74,8 +74,44 @@ func TestApplyMigrationRegistryRejectsOutOfOrderEntries(t *testing.T) {
 	entries[0], entries[1] = entries[1], entries[0]
 
 	err := applyMigrationRegistry(openInternalMigrationTestDatabase(t), entries)
-	if err == nil || !strings.Contains(err.Error(), "migration registry entry 1") {
+	if err == nil || !strings.Contains(err.Error(), "migration registry entry 2 has non-ascending ID") {
 		t.Fatalf("applyMigrationRegistry() error = %v, want out-of-order registry rejection", err)
+	}
+}
+
+func TestMigrationRegistryAcceptsAnchoredForkIDs(t *testing.T) {
+	entries := []migration{
+		registryEntry("0001_initial"),
+		registryEntry("0014_affinity_kind"),
+		registryEntry("0014_zz_anthropic_betas"),
+		registryEntry("0015_group_usage_index"),
+	}
+	if err := validateMigrationRegistry(entries); err != nil {
+		t.Fatalf("validateMigrationRegistry() error = %v, want anchored fork ID accepted", err)
+	}
+}
+
+func TestMigrationRegistryRejectsNonAscendingIDs(t *testing.T) {
+	for name, entries := range map[string][]migration{
+		"descending":         {registryEntry("0002_second"), registryEntry("0001_first")},
+		"duplicate":          {registryEntry("0001_first"), registryEntry("0001_first")},
+		"fork before anchor": {registryEntry("0014_zz_anthropic_betas"), registryEntry("0014_affinity_kind")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := validateMigrationRegistry(entries)
+			if err == nil || !strings.Contains(err.Error(), "has non-ascending ID") {
+				t.Fatalf("validateMigrationRegistry() error = %v, want non-ascending ID rejection", err)
+			}
+		})
+	}
+}
+
+func registryEntry(id string) migration {
+	return migration{
+		ID:                  id,
+		Up:                  func(*gorm.DB) error { return nil },
+		Validate:            func(*gorm.DB) error { return nil },
+		ValidateRecoverable: func(*gorm.DB) error { return nil },
 	}
 }
 

@@ -7,11 +7,11 @@ import (
 	"gorm.io/gorm"
 )
 
-const ID0015 = "0015_anthropic_betas"
+const ID0014ZZ = "0014_zz_anthropic_betas"
 
-// Up0015 原子增加客户端声明的 beta 能力列，旧日志保留空值，避免推测历史请求的 beta 声明。
-func Up0015(db *gorm.DB) error {
-	if err := ValidateRecoverable0015(db); err != nil {
+// Up0014ZZ 原子增加客户端声明的 beta 能力列，旧日志保留空值，避免推测历史请求的 beta 声明。
+func Up0014ZZ(db *gorm.DB) error {
+	if err := ValidateRecoverable0014ZZ(db); err != nil {
 		return err
 	}
 	if !db.Migrator().HasColumn("request_logs", "anthropic_betas") {
@@ -19,18 +19,18 @@ func Up0015(db *gorm.DB) error {
 			return fmt.Errorf("add anthropic betas: %w", err)
 		}
 	}
-	return Validate0015(db)
+	return Validate0014ZZ(db)
 }
-func ValidateRecoverable0015(db *gorm.DB) error {
+func ValidateRecoverable0014ZZ(db *gorm.DB) error {
 	if !db.Migrator().HasTable("request_logs") {
 		return fmt.Errorf("request_logs table is missing")
 	}
 	if db.Migrator().HasColumn("request_logs", "anthropic_betas") {
-		return Validate0015(db)
+		return Validate0014ZZ(db)
 	}
 	return nil
 }
-func Validate0015(db *gorm.DB) error {
+func Validate0014ZZ(db *gorm.DB) error {
 	columns, err := db.Migrator().ColumnTypes("request_logs")
 	if err != nil {
 		return err

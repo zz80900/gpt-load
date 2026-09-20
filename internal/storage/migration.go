@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -17,7 +16,9 @@ const (
 	initialSchemaSentinelTable = "groups"
 )
 
-var migrationIDPattern = regexp.MustCompile(`^(\d{4})_[a-z0-9]+(?:_[a-z0-9]+)*$`)
+// migrationIDPattern 只校验 ID 形态，不解析编号：顺序约束由 validateMigrationRegistry
+// 的字典序比较负责，编号本身不再需要等于注册表位置。
+var migrationIDPattern = regexp.MustCompile(`^\d{4}_[a-z0-9]+(?:_[a-z0-9]+)*$`)
 
 type schemaMigration struct {
 	ID string `gorm:"column:id;type:varchar(255);primaryKey;not null"`
@@ -105,10 +106,13 @@ var migrations = []migration{
 	},
 	{ID: migrationfiles.ID0013, Up: migrationfiles.Up0013, Validate: migrationfiles.Validate0013, ValidateRecoverable: migrationfiles.ValidateRecoverable0013},
 	{ID: migrationfiles.ID0014, Up: migrationfiles.Up0014, Validate: migrationfiles.Validate0014, ValidateRecoverable: migrationfiles.ValidateRecoverable0014},
+	// Fork-owned migration. It keeps the upstream number it was created against
+	// plus the "_zz_" namespace marker so that upstream migrations added later
+	// never collide with it. See migrations/doc.go.
+	{ID: migrationfiles.ID0014ZZ, Up: migrationfiles.Up0014ZZ, Validate: migrationfiles.Validate0014ZZ, ValidateRecoverable: migrationfiles.ValidateRecoverable0014ZZ},
 	{ID: migrationfiles.ID0015, Up: migrationfiles.Up0015, Validate: migrationfiles.Validate0015, ValidateRecoverable: migrationfiles.ValidateRecoverable0015},
 	{ID: migrationfiles.ID0016, Up: migrationfiles.Up0016, Validate: migrationfiles.Validate0016, ValidateRecoverable: migrationfiles.ValidateRecoverable0016},
 	{ID: migrationfiles.ID0017, Up: migrationfiles.Up0017, Validate: migrationfiles.Validate0017, ValidateRecoverable: migrationfiles.ValidateRecoverable0017},
-	{ID: migrationfiles.ID0018, Up: migrationfiles.Up0018, Validate: migrationfiles.Validate0018, ValidateRecoverable: migrationfiles.ValidateRecoverable0018},
 }
 
 func applyMigrations(db *gorm.DB) error {
@@ -150,20 +154,24 @@ func applyMigrationRegistry(db *gorm.DB, entries []migration) error {
 	}
 }
 
+// validateMigrationRegistry enforces the invariants the position-based ledger
+// comparison relies on: every ID matches the shared naming pattern and the
+// registry order equals the lexicographic ID order. The ledger is read with
+// ORDER BY id ASC and compared index by index, so a registry whose order
+// differs from that ordering would silently pair an applied ID with the wrong
+// entry. Strictly ascending IDs also make the IDs unique.
+//
+// The old "number == position" rule is gone on purpose: fork-owned migrations
+// now share the upstream number space (NNNN_zz_<name>), which no longer maps to
+// a contiguous 1-based sequence.
 func validateMigrationRegistry(entries []migration) error {
 	for index, entry := range entries {
 		position := index + 1
-		matches := migrationIDPattern.FindStringSubmatch(entry.ID)
-		if len(matches) != 2 {
+		if !migrationIDPattern.MatchString(entry.ID) {
 			return fmt.Errorf("migration registry entry %d has invalid ID %q", position, entry.ID)
 		}
-		number, err := strconv.Atoi(matches[1])
-		if err != nil || number != position {
-			return fmt.Errorf(
-				"migration registry entry %d has non-contiguous ID %q",
-				position,
-				entry.ID,
-			)
+		if index > 0 && entries[index-1].ID >= entry.ID {
+			return fmt.Errorf("migration registry entry %d has non-ascending ID %q", position, entry.ID)
 		}
 		if entry.Up == nil || entry.Validate == nil || entry.ValidateRecoverable == nil {
 			return fmt.Errorf("migration registry entry %d (%s) is incomplete", position, entry.ID)
@@ -184,6 +192,13 @@ func applyMigrationsLocked(db *gorm.DB, entries []migration, useMigrationTransac
 		if err := db.AutoMigrate(&schemaMigration{}); err != nil {
 			return fmt.Errorf("create schema_migrations: %w", err)
 		}
+	}
+
+	// Rewrite ledgers written before fork-owned migrations moved into their own
+	// NNNN_zz_<name> namespace. Must run before the ORDER BY id ASC read below,
+	// inside the same lock/transaction scope as the rest of the chain.
+	if err := normalizeLegacyMigrationLedger(db); err != nil {
+		return err
 	}
 
 	var applied []string

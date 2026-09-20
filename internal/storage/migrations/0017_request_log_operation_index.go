@@ -6,49 +6,49 @@ import (
 	"gorm.io/gorm"
 )
 
-const ID0018 = "0018_request_log_operation_index"
-const requestLogOperationIndex0018 = "idx_request_logs_operation_completed_id"
+const ID0017 = "0017_request_log_operation_index"
+const requestLogOperationIndex0017 = "idx_request_logs_operation_completed_id"
 
-type requestLog0018 struct {
+type requestLog0017 struct {
 	Operation     string `gorm:"column:operation;index:idx_request_logs_operation_completed_id,priority:1"`
 	CompletedAtMS int64  `gorm:"column:completed_at_ms;index:idx_request_logs_operation_completed_id,priority:2,sort:desc"`
 	ID            string `gorm:"column:id;index:idx_request_logs_operation_completed_id,priority:3,sort:desc"`
 }
 
-func (requestLog0018) TableName() string { return "request_logs" }
+func (requestLog0017) TableName() string { return "request_logs" }
 
-type requestLogOperationIndexColumn0018 struct {
+type requestLogOperationIndexColumn0017 struct {
 	Name       string
 	Descending bool
 	IsUnique   bool
 	IsValid    bool
 }
 
-// Up0018 为操作筛选增加与游标顺序一致的索引，不改历史日志。
-func Up0018(db *gorm.DB) error {
-	if err := ValidateRecoverable0018(db); err != nil {
+// Up0017 为操作筛选增加与游标顺序一致的索引，不改历史日志。
+func Up0017(db *gorm.DB) error {
+	if err := ValidateRecoverable0017(db); err != nil {
 		return err
 	}
-	if !db.Migrator().HasIndex(&requestLog0018{}, requestLogOperationIndex0018) {
-		if err := db.Migrator().CreateIndex(&requestLog0018{}, requestLogOperationIndex0018); err != nil {
+	if !db.Migrator().HasIndex(&requestLog0017{}, requestLogOperationIndex0017) {
+		if err := db.Migrator().CreateIndex(&requestLog0017{}, requestLogOperationIndex0017); err != nil {
 			return fmt.Errorf("create request log operation index: %w", err)
 		}
 	}
-	return Validate0018(db)
+	return Validate0017(db)
 }
 
-func ValidateRecoverable0018(db *gorm.DB) error {
-	if !db.Migrator().HasTable(&requestLog0018{}) {
+func ValidateRecoverable0017(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&requestLog0017{}) {
 		return fmt.Errorf("request log operation index: request_logs table is missing")
 	}
-	if db.Migrator().HasIndex(&requestLog0018{}, requestLogOperationIndex0018) {
-		return Validate0018(db)
+	if db.Migrator().HasIndex(&requestLog0017{}, requestLogOperationIndex0017) {
+		return Validate0017(db)
 	}
 	return nil
 }
 
-func Validate0018(db *gorm.DB) error {
-	columns, err := requestLogOperationIndexColumns0018(db)
+func Validate0017(db *gorm.DB) error {
+	columns, err := requestLogOperationIndexColumns0017(db)
 	if err != nil {
 		return err
 	}
@@ -71,8 +71,8 @@ func Validate0018(db *gorm.DB) error {
 	return nil
 }
 
-func requestLogOperationIndexColumns0018(db *gorm.DB) ([]requestLogOperationIndexColumn0018, error) {
-	var columns []requestLogOperationIndexColumn0018
+func requestLogOperationIndexColumns0017(db *gorm.DB) ([]requestLogOperationIndexColumn0017, error) {
+	var columns []requestLogOperationIndexColumn0017
 	var query string
 	var arguments []any
 	switch db.Dialector.Name() {
@@ -92,7 +92,7 @@ func requestLogOperationIndexColumns0018(db *gorm.DB) ([]requestLogOperationInde
 			WHERE namespace.nspname = current_schema() AND table_relation.relname = 'request_logs'
 				AND index_relation.relname = ?
 			ORDER BY key.position`
-		arguments = []any{requestLogOperationIndex0018}
+		arguments = []any{requestLogOperationIndex0017}
 	case "mysql":
 		query = `
 			SELECT column_name AS name, collation = 'D' AS descending,
@@ -100,7 +100,7 @@ func requestLogOperationIndexColumns0018(db *gorm.DB) ([]requestLogOperationInde
 			FROM information_schema.statistics
 			WHERE table_schema = DATABASE() AND table_name = 'request_logs' AND index_name = ?
 			ORDER BY seq_in_index`
-		arguments = []any{requestLogOperationIndex0018}
+		arguments = []any{requestLogOperationIndex0017}
 	case "sqlite":
 		query = `
 			SELECT column_info.name AS name, column_info.desc <> 0 AS descending,
@@ -109,7 +109,7 @@ func requestLogOperationIndexColumns0018(db *gorm.DB) ([]requestLogOperationInde
 			JOIN pragma_index_list('request_logs') AS index_list ON index_list.name = ?
 			WHERE column_info.key = 1
 			ORDER BY column_info.seqno`
-		arguments = []any{requestLogOperationIndex0018, requestLogOperationIndex0018}
+		arguments = []any{requestLogOperationIndex0017, requestLogOperationIndex0017}
 	default:
 		return nil, fmt.Errorf("request log operation index: unsupported database driver %q", db.Dialector.Name())
 	}

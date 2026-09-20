@@ -7,9 +7,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const ID0017 = "0017_credential_quota_history"
+const ID0016 = "0016_credential_quota_history"
 
-type quotaHistory0017 struct {
+type quotaHistory0016 struct {
 	ID              uint   `gorm:"primaryKey;autoIncrement"`
 	GroupID         uint   `gorm:"not null;check:chk_quota_history_group,group_id > 0"`
 	CredentialID    uint   `gorm:"not null;uniqueIndex:idx_quota_history_identity,priority:1;check:chk_quota_history_credential,credential_id > 0"`
@@ -26,41 +26,41 @@ type quotaHistory0017 struct {
 	WindowSeconds   *int64 `gorm:"check:chk_quota_history_period,window_seconds IS NULL OR window_seconds > 0"`
 }
 
-func (quotaHistory0017) TableName() string { return "credential_quota_histories" }
+func (quotaHistory0016) TableName() string { return "credential_quota_histories" }
 
-// Up0017 使用冻结模型扩展三数据库的同一增量链。
-func Up0017(db *gorm.DB) error {
-	if Validate0017(db) == nil {
+// Up0016 使用冻结模型扩展三数据库的同一增量链。
+func Up0016(db *gorm.DB) error {
+	if Validate0016(db) == nil {
 		return nil
 	}
-	if err := ValidateRecoverable0017(db); err != nil {
+	if err := ValidateRecoverable0016(db); err != nil {
 		return err
 	}
-	if err := db.AutoMigrate(&quotaHistory0017{}); err != nil {
+	if err := db.AutoMigrate(&quotaHistory0016{}); err != nil {
 		return fmt.Errorf("create credential quota history: %w", err)
 	}
-	return Validate0017(db)
+	return Validate0016(db)
 }
 
-func ValidateRecoverable0017(db *gorm.DB) error {
-	if !db.Migrator().HasTable(&quotaHistory0017{}) {
+func ValidateRecoverable0016(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&quotaHistory0016{}) {
 		return nil
 	}
-	if Validate0017(db) == nil {
+	if Validate0016(db) == nil {
 		return nil
 	}
 	var count int64
-	if err := db.Model(&quotaHistory0017{}).Count(&count).Error; err != nil {
+	if err := db.Model(&quotaHistory0016{}).Count(&count).Error; err != nil {
 		return err
 	}
 	if count != 0 {
 		return fmt.Errorf("incomplete quota history schema contains data")
 	}
 	statement := &gorm.Statement{DB: db}
-	if err := statement.Parse(&quotaHistory0017{}); err != nil {
+	if err := statement.Parse(&quotaHistory0016{}); err != nil {
 		return err
 	}
-	columns, err := db.Migrator().ColumnTypes(&quotaHistory0017{})
+	columns, err := db.Migrator().ColumnTypes(&quotaHistory0016{})
 	if err != nil {
 		return err
 	}
@@ -72,8 +72,8 @@ func ValidateRecoverable0017(db *gorm.DB) error {
 	return nil
 }
 
-func Validate0017(db *gorm.DB) error {
-	model := &quotaHistory0017{}
+func Validate0016(db *gorm.DB) error {
+	model := &quotaHistory0016{}
 	if !db.Migrator().HasTable(model) {
 		return fmt.Errorf("credential quota history table is missing")
 	}
