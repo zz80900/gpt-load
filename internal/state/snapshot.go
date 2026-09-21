@@ -9,9 +9,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gpt-load/internal/accessquota"
 	"gpt-load/internal/automodel"
+	"gpt-load/internal/catalog"
 	"gpt-load/internal/channel"
 	"gpt-load/internal/connection"
 	"gpt-load/internal/execution"
@@ -26,14 +28,15 @@ import (
 const maxSafeAccessKeyEpochMS = int64(9_007_199_254_740_991)
 
 type CompileInput struct {
-	AutoModel        *automodel.Config
-	SystemSettings   config.Settings
-	ChannelRegistry  *channel.Registry
-	Groups           []GroupConfig
-	Credentials      []CredentialConfig
-	AccessKeys       []AccessKeyConfig
-	GlobalProxy      *outboundproxy.Config
-	EnvironmentProxy *outboundproxy.Config
+	AutoModel            *automodel.Config
+	SystemSettings       config.Settings
+	ChannelRegistry      *channel.Registry
+	Groups               []GroupConfig
+	Credentials          []CredentialConfig
+	AccessKeys           []AccessKeyConfig
+	ClientModelOverrides map[string]catalog.ClientModelOverrides
+	GlobalProxy          *outboundproxy.Config
+	EnvironmentProxy     *outboundproxy.Config
 }
 
 type GroupConfig struct {
@@ -349,6 +352,7 @@ type ConfigSnapshot struct {
 	AccessKeysByHash       map[string]AccessKeyView
 	GroupCatalog           map[uint]GroupCatalogView
 	AccessKeysByID         map[uint]AccessKeyView
+	ClientModelOverrides   map[string]catalog.ClientModelOverrides
 	GlobalProxy            outboundproxy.Effective
 }
 
@@ -365,6 +369,7 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 		autoConfig = *input.AutoModel
 	}
 	ordinaryModels := map[string]struct{}{}
+	decisionModels := map[string]struct{}{}
 	for _, group := range input.Groups {
 		for _, model := range group.Models {
 			// 自动模型不能占用分组对外暴露的任何名字，别名也算占用，
@@ -373,8 +378,28 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 				ordinaryModels[name] = struct{}{}
 			}
 		}
+		if !group.Enabled {
+			continue
+		}
+		target, resolveErr := input.ChannelRegistry.Resolve(group.ChannelID, group.Params)
+		if resolveErr != nil {
+			continue
+		}
+		for _, model := range group.Models {
+			if _, supported := target.ModeForModel(
+				protocol.Decisions,
+				execution.OperationDecisionsCreate,
+				model.ID,
+			); supported {
+				// 与 ordinaryModels 同理：决策能力登记的是全部对外可见名，
+				// 别名也要占位，故用复数版而非已被 fork 重构删除的单数函数。
+				for _, name := range ExternalModelNames(model) {
+					decisionModels[name] = struct{}{}
+				}
+			}
+		}
 	}
-	autoModels, err := automodel.Compile(autoConfig, ordinaryModels)
+	autoModels, err := automodel.Compile(autoConfig, ordinaryModels, decisionModels)
 	if err != nil {
 		return nil, fmt.Errorf("compile automatic models: %w", err)
 	}
@@ -392,6 +417,7 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 		AccessKeysByHash:      make(map[string]AccessKeyView),
 		GroupCatalog:          make(map[uint]GroupCatalogView),
 		AccessKeysByID:        make(map[uint]AccessKeyView),
+		ClientModelOverrides:  cloneClientModelOverrides(input.ClientModelOverrides),
 		GlobalProxy:           globalProxy,
 	}
 
@@ -588,7 +614,8 @@ func appendExecutionTargets(
 				execution.OperationCountTokens,
 				execution.OperationImagesGenerate,
 				execution.OperationImagesEdit,
-				execution.OperationEmbeddingsCreate, execution.OperationRerank:
+				execution.OperationEmbeddingsCreate, execution.OperationRerank,
+				execution.OperationDecisionsCreate:
 				for _, registration := range registrations {
 					modelMode, supported := target.ModeForModel(clientProtocol, operation, registration.upstreamID)
 					if !supported {
@@ -732,6 +759,17 @@ func lessModelPattern(left, right string) bool {
 }
 
 func validateCompileInput(input CompileInput) error {
+	for model, overrides := range input.ClientModelOverrides {
+		if !utf8.ValidString(model) || model == "" || strings.TrimSpace(model) != model {
+			return fmt.Errorf("client model override has invalid model name")
+		}
+		if err := overrides.Validate(); err != nil {
+			return fmt.Errorf("client model override %q: %w", model, err)
+		}
+		if overrides.IsEmpty() {
+			return fmt.Errorf("client model override %q is empty", model)
+		}
+	}
 	groupIDs := make(map[uint]struct{}, len(input.Groups))
 	for _, group := range input.Groups {
 		if group.ID == 0 {
@@ -947,4 +985,15 @@ func resolvePriceMultiplier(value *pricing.PriceMultiplier) pricing.PriceMultipl
 		return pricing.DefaultPriceMultiplier
 	}
 	return *value
+}
+
+func cloneClientModelOverrides(input map[string]catalog.ClientModelOverrides) map[string]catalog.ClientModelOverrides {
+	if input == nil {
+		return nil
+	}
+	cloned := make(map[string]catalog.ClientModelOverrides, len(input))
+	for model, overrides := range input {
+		cloned[model] = overrides.Clone()
+	}
+	return cloned
 }
