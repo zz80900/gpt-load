@@ -130,10 +130,7 @@ defineExpose({ focus: () => input.value?.focus() })
 </script>
 
 <template>
-  <div
-    class="modern-tag-input"
-    :class="{ 'is-invalid': invalid, 'is-disabled': disabled }"
-  >
+  <div class="modern-tag-input" :class="{ 'is-invalid': invalid, 'is-disabled': disabled }">
     <label class="modern-sr-only" :for="inputId">{{ label }}</label>
     <span v-for="tag in modelValue" :key="tag" class="modern-tag-input__tag">
       <span class="modern-tag-input__tag-label">{{ tag }}</span>

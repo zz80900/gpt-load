@@ -46,9 +46,7 @@ const requestIDPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3
 const logCursorPattern = /^[A-Za-z0-9_-]{1,512}$/u
 
 export function normalizeMonitorTab(raw: unknown): MonitorTab {
-  return raw === 'logs' || raw === 'inspector' || raw === 'usage' || raw === 'health'
-    ? raw
-    : 'logs'
+  return raw === 'logs' || raw === 'inspector' || raw === 'usage' || raw === 'health' ? raw : 'logs'
 }
 
 export function normalizeMonitorQuery(query: Record<string, unknown>): LocationQueryRaw {

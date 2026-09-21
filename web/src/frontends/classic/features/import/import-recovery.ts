@@ -194,7 +194,8 @@ function migrateModelAliases(models: unknown): unknown {
   })
 }
 
-function parseRecoveryRecord(raw: string): ImportRecoveryRecord | null {  try {
+function parseRecoveryRecord(raw: string): ImportRecoveryRecord | null {
+  try {
     let value: unknown = JSON.parse(raw)
     if (isRecord(value) && value.version === 6 && isRecord(value.draft)) {
       value = {

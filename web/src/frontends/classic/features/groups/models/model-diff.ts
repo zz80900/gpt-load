@@ -64,9 +64,6 @@ export function syncedModels(
 ) {
   const removalKeys = new Set(diff.removals.map(({ key }) => key))
   const retained = mode === 'add' ? current : current.filter(({ key }) => !removalKeys.has(key))
-  const additions =
-    mode === 'cleanup'
-      ? []
-      : diff.additions.map(({ id }) => ({ id, aliases: [] }))
+  const additions = mode === 'cleanup' ? [] : diff.additions.map(({ id }) => ({ id, aliases: [] }))
   return normalizeSharedModels([...retained, ...additions])
 }

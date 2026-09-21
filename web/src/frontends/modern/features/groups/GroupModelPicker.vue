@@ -104,7 +104,10 @@ const filtered = computed(() => {
   const terms = search.value.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean)
   return models.value.filter((model) =>
     terms.every((term) =>
-      [model.id, visibleAliases(model.aliases).join(' ')].join(' ').toLocaleLowerCase().includes(term),
+      [model.id, visibleAliases(model.aliases).join(' ')]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(term),
     ),
   )
 })
@@ -327,9 +330,7 @@ useLoadingActivity(() => filtering.value || props.loading)
               :remove-label="(alias: string) => t('groupCreate.removeAlias', { alias })"
               :disabled="disabled"
               :invalid="Boolean(rowErrors.alias)"
-              :described-by="
-                rowErrors.alias ? `${instanceId}-alias-error-${model.key}` : undefined
-              "
+              :described-by="rowErrors.alias ? `${instanceId}-alias-error-${model.key}` : undefined"
               autocomplete="off"
               spellcheck="false"
               @update:model-value="models = setAliases(models, model.key, $event)"
@@ -538,7 +539,8 @@ useLoadingActivity(() => filtering.value || props.loading)
 @media (max-width: 760px) {
   .modern-create-model-labels,
   .modern-create-model-row {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) max-content
+    grid-template-columns:
+      minmax(0, 1.1fr) minmax(0, 1.4fr) max-content
       var(--modern-touch-target);
   }
 }

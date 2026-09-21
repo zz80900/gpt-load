@@ -98,9 +98,7 @@ function normalizeModel(model: ModelAliasDraft): { id: string; aliases: string[]
 }
 
 /** Client names are intentionally exact and case sensitive, matching the API contract. */
-export function findModelNameConflicts(
-  models: readonly ModelAliasDraft[],
-): ModelNameConflict[] {
+export function findModelNameConflicts(models: readonly ModelAliasDraft[]): ModelNameConflict[] {
   // 名称 -> 认领它的上游 ID -> 该上游首次出现的条目下标。同一个上游的多条记录
   // （存量写法）可以共用名字；只有跨上游认领同名才是冲突——那会让该名称解析到
   // 两个不同上游，路由结果由候选排序而非配置决定。
