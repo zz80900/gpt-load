@@ -1,0 +1,52 @@
+name: Fork CI
+
+# fork 自有的推送校验。
+#
+# 为什么单建一个工作流，而不是给上游的 ci.yml 加 push 触发：
+#   1. 上游 ci.yml 只监听 pull_request，而本仓库不开 PR、直接 push，所以它从未运行过；
+#   2. 它的全部 job 都依赖自托管 runner（macOS/Linux ARM64、Windows X64），本仓库没有，
+#      加 push 触发的结果只会是永远排队，拿不到任何信号；
+#   3. 本文件是 fork 独有路径，上游永远不会修改它，因此不产生合并冲突。
+#
+# 覆盖两类最容易在合并上游时被破坏、且本地因 core.autocrlf 难以验证的检查：
+#   - web：lint / prettier 格式 / 构建（复用上游的 web-ci 动作，不重复实现）
+#   - go：gofmt / go vet（vet 会编译 _test.go，能暴露上游测试与 fork 契约的编译冲突，
+#         例如上游用单数 Alias 构造 state.ModelConfig 这类问题）
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # 先构建 web：internal/webui/dist 是 go:embed 的输入，Go 侧检查依赖它。
+      - name: Validate and build web UI
+        uses: ./.github/actions/web-ci
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Run Go vet
+        run: go vet ./...
