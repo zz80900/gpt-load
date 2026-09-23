@@ -286,8 +286,9 @@ export default {
       noMatches: '没有匹配的模型',
       resolveErrors: '请处理模型信息中的问题',
       conflictSummary: '对外模型名称存在精确重复',
+      emptyAliasSummary: '存在已启用但为空的别名',
       locateFirstInvalid: '定位首个问题',
-      nameConflict: '对外模型名称“{name}”重复',
+      nameConflict: '“{name}”的模型映射重复',
       sources: {
         catalog: '渠道目录',
         live: '上游发现',

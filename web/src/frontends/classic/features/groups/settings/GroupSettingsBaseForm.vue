@@ -8,7 +8,8 @@ import type {
   ConnectionType,
   GroupModelItemDto,
 } from '@/api/control/types'
-import type { ChannelFieldDto } from '@/app/resources/channels'
+import type { ChannelDto, ChannelFieldDto } from '@/app/resources/channels'
+import ChannelPresetPicker from '@/components/config/ChannelPresetPicker.vue'
 import GroupTestFields from '../GroupTestFields.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import { concreteModelNames } from '@/lib/model-name'
@@ -17,6 +18,9 @@ import { isValidPriceMultiplier } from '@/lib/price-multiplier'
 const props = defineProps<{
   section: 'general' | 'routing'
   channelId: string
+  switchableChannels?: readonly ChannelDto[]
+  channelSwitchDisabled?: boolean
+  channelSwitchHint?: string
   connectionType: ConnectionType
   defaultBaseUrl: string
   defaultBaseUrls: string[]
@@ -36,6 +40,7 @@ const props = defineProps<{
   paramErrors: Record<string, string>
 }>()
 const emit = defineEmits<{
+  'switch:channel': [value: string]
   'update:param': [key: string, value: string | null]
   'update:name': [value: string]
   'update:validationProtocol': [value: AccessProtocol]
@@ -46,6 +51,9 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const isSubscription = computed(() => props.connectionType === 'subscription')
+const currentChannel = computed(
+  () => props.switchableChannels?.find(({ channel_id }) => channel_id === props.channelId) ?? null,
+)
 // 验活直接把该值当成上游模型 ID 使用，所以候选取 id 而不是可能被别名替换的 client_model。
 // 别名只是展示用的备注，通配符别名（如 claude-*[1m]）在这里没有信息量，过滤掉。
 const validationModelOptions = computed(() =>
@@ -146,6 +154,24 @@ function parameterPlaceholder(field: ChannelFieldDto): string | undefined {
         </small>
         <small v-else>{{ t('common.priceMultiplier.groupHelp') }}</small>
       </label>
+      <div
+        v-if="(switchableChannels?.length ?? 0) > 1"
+        class="group-settings__field group-settings__wide"
+      >
+        <span>{{ t('group.settings.base.channel') }}</span>
+        <ChannelPresetPicker
+          :model-value="channelId"
+          :channels="switchableChannels ?? []"
+          :selected-channel="currentChannel"
+          :loading="false"
+          :error="false"
+          :disabled="pending || channelSwitchDisabled"
+          hide-header
+          compact
+          @select="emit('switch:channel', $event.channel_id)"
+        />
+        <small>{{ channelSwitchHint || t('group.settings.base.channelHelp') }}</small>
+      </div>
       <GroupTestFields
         v-if="!isSubscription"
         class="group-settings__wide"

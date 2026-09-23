@@ -175,6 +175,7 @@ func (s *Server) HTTPModule() httproute.Module {
 			controlRoute("control.usage", http.MethodGet, "/usage", s.handleUsage),
 			controlRoute("control.route.inspect", http.MethodPost, "/route/inspect", s.handleRouteInspect),
 			controlRoute("control.settings.get", http.MethodGet, "/settings", s.handleGetSettings),
+			controlRoute("control.settings.request-redaction.validate", http.MethodPost, "/settings/request-redaction/validate", s.handleValidateRequestRedaction),
 			controlRoute(
 				"control.settings.update",
 				http.MethodPut,
@@ -233,6 +234,17 @@ func (s *Server) HTTPModule() httproute.Module {
 					groupMutationLocator,
 				)),
 				s.handleUpdateGroupSettings,
+			),
+			controlRoute(
+				"control.groups.channel.update",
+				http.MethodPut,
+				"/groups/:group_id/channel",
+				s.auditMutation(newMutationDescriptor(
+					"group_channel_update",
+					"group",
+					groupMutationLocator,
+				)),
+				s.handleUpdateGroupChannel,
 			),
 			controlRoute(
 				"control.groups.retired-update",

@@ -140,8 +140,8 @@ func TestExternalDatabaseLifecycle(t *testing.T) {
 		migrationIDs[5] != "0006_error_decision" ||
 		migrationIDs[6] != "0007_access_key_lifecycle" ||
 		migrationIDs[7] != "0008_remove_inject_usage_options" ||
-		migrationIDs[8] != "0009_price_multipliers" || migrationIDs[9] != "0010_model_cooldown" || migrationIDs[10] != "0011_custom_access_keys" || migrationIDs[11] != "0012_access_key_mask_prefix" || migrationIDs[12] != "0013_validation_protocol" || migrationIDs[13] != "0014_affinity_kind" || migrationIDs[14] != "0014_zz_anthropic_betas" || migrationIDs[15] != "0015_group_usage_index" || migrationIDs[16] != "0016_credential_quota_history" || migrationIDs[17] != "0017_request_log_operation_index" || migrationIDs[18] != "0018_auto_model" || migrationIDs[19] != "0019_auto_decision_attribution" || migrationIDs[20] != "0020_client_model_overrides" {
-		t.Fatalf("migration ledger = %v, want complete 21-entry chain (0001..0020 plus 0014_zz_anthropic_betas)", migrationIDs)
+		migrationIDs[8] != "0009_price_multipliers" || migrationIDs[9] != "0010_model_cooldown" || migrationIDs[10] != "0011_custom_access_keys" || migrationIDs[11] != "0012_access_key_mask_prefix" || migrationIDs[12] != "0013_validation_protocol" || migrationIDs[13] != "0014_affinity_kind" || migrationIDs[14] != "0014_zz_anthropic_betas" || migrationIDs[15] != "0015_group_usage_index" || migrationIDs[16] != "0016_credential_quota_history" || migrationIDs[17] != "0017_request_log_operation_index" || migrationIDs[18] != "0018_auto_model" || migrationIDs[19] != "0019_auto_decision_attribution" || migrationIDs[20] != "0020_client_model_overrides" || migrationIDs[21] != "0021_request_audit" {
+		t.Fatalf("migration ledger = %v, want complete 22-entry chain (0001..0021 plus 0014_zz_anthropic_betas)", migrationIDs)
 	}
 	if !db.Migrator().HasIndex("usage_stats", "idx_usage_stats_group_bucket") {
 		t.Fatal("usage_stats group activity index is missing")
