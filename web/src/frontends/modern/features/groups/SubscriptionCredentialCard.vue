@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CredentialDisplay from '@modern/components/CredentialDisplay.vue'
 import { useLoadingActivity } from '@modern/components/ui/loading'
 import { Check, RefreshCw, Ticket } from '@lucide/vue'
 import { computed } from 'vue'
@@ -31,12 +32,24 @@ const props = defineProps<{
   pendingAction?: string
   syncSucceeded?: boolean
   error?: string
+  saveName: (name: string) => Promise<void>
 }>()
-defineEmits<{ select: [value: boolean]; toggle: [value: boolean]; action: [value: string] }>()
+defineEmits<{
+  select: [value: boolean]
+  toggle: [value: boolean]
+  action: [value: string]
+  nameDirty: [value: boolean]
+}>()
 const { t, n, locale } = useI18n()
 const state = computed(() => credentialStatus(props.row))
 const observation = computed(() => props.row.observation)
 const plan = computed(() => observation.value?.plan.trim() ?? '')
+const creditBalanceLabel = computed(() => {
+  const credits = observation.value?.credits
+  if (credits?.unlimited) return t('credentialCards.creditUnlimited')
+  const balance = Number(credits?.balance)
+  return Number.isFinite(balance) && balance > 0 ? n(balance, { maximumFractionDigits: 20 }) : ''
+})
 const creditLabel = computed(() => {
   const expirations = observation.value?.creditExpirations ?? []
   const available = observation.value?.resetCredits ?? 0
@@ -71,21 +84,45 @@ useLoadingActivity(() => Boolean(props.pending))
     :aria-busy="pending || undefined"
   >
     <header class="modern-subscription-card-heading">
-      <AppTooltip :label="t('groupDetail.selectCredential', { name: row.account || row.mask })">
+      <AppTooltip :label="t('groupDetail.selectCredential', { name: row.label })">
         <AppCheckbox
           class="modern-subscription-card-select"
           :model-value="selected"
-          :label="t('groupDetail.selectCredential', { name: row.account || row.mask })"
+          :label="t('groupDetail.selectCredential', { name: row.label })"
           label-hidden
           :disabled="disabled"
           @update:model-value="$emit('select', $event)"
         />
       </AppTooltip>
       <div class="modern-subscription-card-identity">
-        <AppOverflowText class="modern-subscription-card-name" :text="row.account || row.mask" />
+        <div class="modern-subscription-card-name-line">
+          <CredentialDisplay
+            class="modern-subscription-card-name"
+            :name="row.name"
+            :value="row.account || row.mask"
+            :save-name="saveName"
+            :disabled="disabled"
+            subscription
+            detail
+            reveal
+            @dirty="$emit('nameDirty', $event)"
+          />
+          <AppTooltip v-if="row.rpmPeakHour !== undefined" :label="t('rpm.hourPeak')">
+            <span class="modern-subscription-card-rpm" tabindex="0"
+              >{{ t('rpm.cardLabel') }} {{ n(row.rpmPeakHour) }}</span
+            >
+          </AppTooltip>
+        </div>
         <div class="modern-subscription-card-subtitle">
           <div class="modern-subscription-card-plan">
             <CredentialPlanBadge v-if="plan" :name="plan" :level="observation?.planLevel" />
+            <AppBadge
+              v-if="creditBalanceLabel"
+              class="modern-subscription-card-credit-balance"
+              size="xs"
+            >
+              {{ t('credentialCards.creditBalance') }} {{ creditBalanceLabel }}
+            </AppBadge>
             <CredentialRoutingMeta :row="row" />
           </div>
           <div class="modern-subscription-card-status-actions">
@@ -212,6 +249,11 @@ useLoadingActivity(() => Boolean(props.pending))
 </template>
 
 <style scoped>
+.modern-subscription-card-credit-balance {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .modern-subscription-card-error {
   color: var(--modern-danger);
 }
@@ -248,13 +290,29 @@ useLoadingActivity(() => Boolean(props.pending))
   flex: 1;
   min-width: 0;
 }
+.modern-subscription-card-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--modern-space-2);
+  min-width: 0;
+}
 .modern-subscription-card-select {
   align-self: flex-start;
   margin-top: var(--modern-space-0-5);
 }
 .modern-subscription-card-name {
+  flex: 1;
+  min-width: 0;
   font-size: var(--modern-font-size-body);
   font-weight: var(--modern-weight-semibold);
+}
+.modern-subscription-card-rpm {
+  flex: none;
+  color: var(--modern-muted);
+  font-size: var(--modern-font-size-caption);
+  font-weight: var(--modern-weight-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .modern-subscription-card-subtitle {
   display: flex;

@@ -15,6 +15,7 @@ import (
 	"gpt-load/internal/connection"
 	"gpt-load/internal/outboundproxy"
 	app_errors "gpt-load/internal/platform/errors"
+	"gpt-load/internal/rpm"
 	"gpt-load/internal/state"
 	stateloader "gpt-load/internal/state/loader"
 	"gpt-load/internal/storage/models"
@@ -31,6 +32,7 @@ type CredentialImportResult struct {
 }
 
 type CredentialUpdateRequest struct {
+	Name         optionalField[string]                 `json:"name"`
 	Status       optionalField[state.CredentialStatus] `json:"status"`
 	WeightManual optionalField[int]                    `json:"weight_manual"`
 	Proxy        optionalField[outboundproxy.Config]   `json:"proxy"`
@@ -67,6 +69,7 @@ type CredentialSummaryResponse struct {
 }
 
 type CredentialAccountResponse struct {
+	PlanType        string `json:"-"`
 	Email           string `json:"email,omitempty"`
 	EmailMask       string `json:"email_mask,omitempty"`
 	ExpiresAtMS     *int64 `json:"expires_at_ms,omitempty"`
@@ -74,6 +77,8 @@ type CredentialAccountResponse struct {
 }
 
 type CredentialItemResponse struct {
+	Name                    string                         `json:"name"`
+	RPMPeakHour             *int64                         `json:"-"`
 	ModelCooldowns          []ModelCooldownResponse        `json:"model_cooldowns"`
 	CredentialID            uint                           `json:"credential_id"`
 	ConnectionType          string                         `json:"connection_type"`
@@ -190,7 +195,7 @@ func (s *Service) credentialPresentation(
 		}
 		stagedAccount := subscriptionCredentialAccount(credential)
 		account := CredentialAccountResponse{
-			Email: strings.TrimSpace(credential.Account().Email), EmailMask: stagedAccount.EmailMask,
+			PlanType: credential.Account().PlanType, Email: strings.TrimSpace(credential.Account().Email), EmailMask: stagedAccount.EmailMask,
 			ExpiresAtMS: stagedAccount.ExpiresAtMS, LastRefreshAtMS: stagedAccount.LastRefreshAtMS,
 		}
 		mask := account.EmailMask
@@ -432,6 +437,7 @@ func (s *Service) mapCredentialCollection(
 		if err != nil {
 			return CredentialCollectionResponse{}, err
 		}
+		item.Name = row.Name
 		item.ConnectionType = string(normalizeGroupConnectionType(observation.group.ConnectionType))
 		item.SecretVersion = row.SecretVersion
 		item.AuthState = string(row.AuthState)
@@ -440,6 +446,7 @@ func (s *Service) mapCredentialCollection(
 		item.Proxy = proxyViews[row.ID]
 		if item.ConnectionType == string(models.ConnectionTypeSubscription) {
 			item.Observation = presentCredentialObservation(observation.subscription[row.ID], row.IdentityFingerprint)
+			item.Observation = withCredentialPlan(item.Observation, account.PlanType)
 		}
 		var filterKey string
 		if query.modern != nil && query.modern.credentialKey != "" {
@@ -449,6 +456,18 @@ func (s *Service) mapCredentialCollection(
 			}
 		}
 		records = append(records, credentialCollectionRecord{item: item, bucket: bucket, createdAtMS: row.CreatedAtMS, credentialKey: filterKey})
+	}
+	if query.modern != nil {
+		ids := make([]uint, len(records))
+		for i, record := range records {
+			ids[i] = record.item.CredentialID
+		}
+		peaks := s.rpmPeaks(ctx, rpm.Credential, ids, observation.observedAt)
+		for i := range records {
+			if peak, ok := peaks[records[i].item.CredentialID]; ok {
+				records[i].item.RPMPeakHour = &peak
+			}
+		}
 	}
 	summary := summarizeCredentialCollection(records)
 	filtered := make([]credentialCollectionRecord, 0, len(records))
@@ -505,7 +524,8 @@ func credentialCollectionMatches(record credentialCollectionRecord, query Creden
 		return true
 	}
 	queryValue := strings.ToLower(query.Query)
-	return strings.Contains(strings.ToLower(record.item.Mask), queryValue) ||
+	return strings.Contains(strings.ToLower(record.item.Name), queryValue) ||
+		strings.Contains(strings.ToLower(record.item.Mask), queryValue) ||
 		strings.Contains(strings.ToLower(record.item.Account.Email), queryValue)
 }
 

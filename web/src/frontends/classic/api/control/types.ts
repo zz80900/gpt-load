@@ -1,3 +1,4 @@
+import type { CodexLiveMode } from '@shared/codex-live'
 import type { ProtocolValue } from './protocols'
 
 export type GroupProtocol = ProtocolValue
@@ -26,6 +27,9 @@ export type ProxyEffectiveMode = 'direct' | 'environment' | 'custom'
 export type ProxyEffectiveSource = 'credential' | 'group' | 'global' | 'environment' | 'default'
 
 export interface ProxyViewDto {
+  proxy_id?: number
+  proxy_name?: string
+  reference_state?: string
   configured_mode: ProxyConfiguredMode
   effective_mode: ProxyEffectiveMode
   effective_source: ProxyEffectiveSource
@@ -33,7 +37,7 @@ export interface ProxyViewDto {
   has_auth: boolean
 }
 
-export type ProxyConfigInput = { mode: 'direct' } | { mode: 'custom'; url: string }
+export type ProxyConfigInput = { mode: 'direct' } | { mode: 'custom'; proxy_id: number }
 export type ProxyMutation = ProxyConfigInput | null
 
 export interface GroupCollectionFilters {
@@ -53,6 +57,8 @@ export interface GroupCollectionSummaryDto {
 }
 
 export interface GroupCollectionItemDto {
+  priority: number
+  concurrency: import('@shared/concurrency').ConcurrencyView
   id: number
   name: string
   price_multiplier: string
@@ -114,10 +120,13 @@ export interface GroupRuntimeConfigDto {
   first_byte_timeout?: number
   request_timeout?: number
   stream_idle_timeout?: number
+  concurrency_limit?: number
   blacklist_threshold?: number
   header_rules?: HeaderRulesDto
   affinity_enabled?: boolean
+  codex_live_mode?: CodexLiveMode
   responses_websocket_enabled?: boolean
+  empty_response_retry?: boolean
   parameter_overrides?: ParameterOverrideRuleDto[]
 }
 
@@ -125,13 +134,17 @@ export interface GroupEffectiveConfigDto {
   first_byte_timeout: number
   request_timeout: number
   stream_idle_timeout: number
+  concurrency_limit: number
   blacklist_threshold: number
   header_rules: HeaderRulesDto
   affinity_enabled: boolean
+  codex_live_mode: CodexLiveMode
   responses_websocket_enabled: boolean
+  empty_response_retry: boolean
 }
 
 export interface GroupSettingsDto {
+  priority: number
   name: string
   price_multiplier: string
   channel_id: string
@@ -235,8 +248,16 @@ export interface CredentialObservationSnapshotDto {
   plan_summary: { name?: string; level?: CredentialPlanLevel }
   account_summary?: CredentialObservationAccountSummaryDto
   quota_windows: CredentialQuotaWindowDto[]
+  credits?: CredentialCreditSummaryDto
   reset_credits_available?: number
   reset_credits?: CredentialResetCreditDto[]
+}
+
+export interface CredentialCreditSummaryDto {
+  balance?: string
+  has_credits?: boolean
+  unlimited?: boolean
+  observed_at_ms?: number
 }
 
 export interface CredentialResetCreditDto {
@@ -273,6 +294,8 @@ export interface ModelCooldownDto {
 }
 
 export interface CredentialItemDto {
+  name: string
+  label: string
   model_cooldowns: ModelCooldownDto[]
   credential_id: number
   connection_type: ConnectionType
@@ -537,6 +560,8 @@ export interface HealthAccessKeyCostLimitDto {
 }
 
 export interface AccessKeyDto {
+  concurrency: import('@shared/concurrency').ConcurrencyView
+  concurrency_limit: number | null
   id: number
   name: string
   price_multiplier: string

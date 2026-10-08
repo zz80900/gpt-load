@@ -161,9 +161,13 @@ func modelListProtocols(value protocol.Protocol) []protocol.Protocol {
 			protocol.OpenAIResponses,
 			protocol.OpenAIImages,
 			protocol.OpenAIEmbeddings,
+			protocol.CodexLive,
 			protocol.Rerank,
 			protocol.Decisions,
 		}
+	}
+	if value == protocol.Gemini {
+		return []protocol.Protocol{protocol.Gemini, protocol.GeminiEmbeddings}
 	}
 	return []protocol.Protocol{value}
 }
@@ -193,7 +197,7 @@ func (handler *Handler) writeVisibleModelList(
 	var err error
 	codexRequest := value == protocol.OpenAICompletions && ginContext.Query("client_version") != ""
 	if codexRequest {
-		body, err = buildCodexModelList(snapshot, accessKey, handler.modelListLimit)
+		body, err = buildCodexModelList(snapshot, accessKey, handler.modelListLimit, ginContext.Query("client_version"))
 	} else {
 		body, err = buildVisibleModelList(snapshot, accessKey, value, handler.modelListLimit)
 	}

@@ -249,6 +249,9 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 			if err := ctx.Err(); err != nil {
 				return ProjectModelListResponse{}, err
 			}
+			if isBuiltInCodexLiveModel(group.row.ChannelID, model.ID) {
+				continue
+			}
 			identity, err := PriceIdentityForChannelModel(group.row.ChannelID, model.ID)
 			if err != nil {
 				return ProjectModelListResponse{}, fmt.Errorf("validate group %d model %q: %w", group.row.ID, model.ID, app_errors.ErrInternalServer)
@@ -263,6 +266,17 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 			// 这里必须用 ConcreteRoutableModelNames：通配符别名匹配的是一个无穷集合，
 			// 既不是可枚举的模型名，也不属于 /v1/models 会列出的具体名称，放进模型页
 			// 只会凭空多出一行名叫 "claude-*" 的假模型。
+			// Codex 分组的客户端协议要去掉 Live：Live 由客户端直连，不作为可路由的
+			// 客户端模型协议出现在模型页。
+			modelProtocols := group.dto.ClientProtocols
+			if group.row.ChannelID == string(channel.Codex) {
+				modelProtocols = make([]protocol.Protocol, 0, len(group.dto.ClientProtocols))
+				for _, candidate := range group.dto.ClientProtocols {
+					if candidate != protocol.CodexLive {
+						modelProtocols = append(modelProtocols, candidate)
+					}
+				}
+			}
 			names := state.ConcreteRoutableModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 			for _, clientModel := range names {
 				root := records[clientModel]
@@ -274,7 +288,7 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 					}
 					records[clientModel] = root
 				}
-				root.protocols = mergeProjectModelProtocols(root.protocols, group.dto.ClientProtocols)
+				root.protocols = mergeProjectModelProtocols(root.protocols, modelProtocols)
 				upstream := root.upstreams[identity]
 				if upstream == nil {
 					affectedGroups, err := projectModelAffectedGroups(identity, references, groupDTOs)
@@ -301,9 +315,13 @@ func (s *Service) ListProjectModels(ctx context.Context, query ProjectModelListQ
 	summary := projectModelSummary(records, priceRecords)
 	result := make([]ProjectModelDTO, 0, len(records))
 	for _, record := range records {
+		overrides := catalog.ClientModelOverrides{}
+		if configSnapshot != nil {
+			overrides = configSnapshot.ClientModelOverrides[record.clientModel]
+		}
 		dto := ProjectModelDTO{
 			ClientModel:    record.clientModel,
-			HasOverrides:   configSnapshot != nil && configSnapshot.ClientModelOverrides[record.clientModel].IsEmpty() == false,
+			HasOverrides:   !overrides.Metadata().IsEmpty(),
 			Protocols:      append([]protocol.Protocol(nil), record.protocols...),
 			UpstreamModels: []ProjectUpstreamModelDTO{},
 		}

@@ -215,11 +215,6 @@ export default {
         headers: 'アップストリームリクエストヘッダールール',
         danger: '危険な操作',
       },
-      routing: {
-        description: 'リクエスト分配に使うグループの相対的な重みを設定します。',
-        weightHelp:
-          '既定値は 50、範囲は 1–100 です。認証情報の重みと掛け合わせて分配比率を決定します。',
-      },
       headers: {
         description:
           'アップストリームへのリクエストに適用するヘッダーの設定・上書き・削除ルール。オーバーライドするとグローバルルール全体を置き換え、マージはされません。',
@@ -328,7 +323,9 @@ export default {
         validationModelPlaceholder: 'モデル ID を検索または入力',
         validationModelHelp:
           '空欄の場合はグループの最初のモデルを使用します。エイリアスではなくアップストリームのモデル ID を入力してください。',
-        weight: 'グループの重み',
+        priority: '優先度',
+        priorityError: '-2147483648～2147483647 の整数を入力してください',
+        weight: '重み',
         auto: '自動',
         manual: '手動',
         weightError: '1～100 の整数を入力してください',
@@ -341,6 +338,9 @@ export default {
         first_byte_timeout: 'ネイティブ応答 / ストリーム初回イベントのタイムアウト',
         request_timeout: '上流リクエスト1回あたりのタイムアウト',
         stream_idle_timeout: 'ストリームアイドルタイムアウト',
+        concurrency_limit: '同時実行数の上限',
+        concurrencyHelp:
+          '0 は無制限。データプレーンの同時実行を制限し、上限到達時は即座に拒否します。',
         blacklist_threshold: '連続失敗のブラックリストしきい値',
         blacklistThresholdHelp:
           'この連続失敗回数に達すると認証情報をブラックリストへ登録します。0 で自動登録を無効化します。',
@@ -368,6 +368,9 @@ export default {
         headerStorageNoticeEnd: 'を使用してください。',
         headerReplacementWarning:
           'このグループ上書きはグローバル HeaderRules 全体を置き換えます。今後のグローバル変更はマージされません。',
+        empty_response_retry: '空応答の検出',
+        emptyResponseRetryHelp:
+          'ストリーミングの対話リクエストにのみ適用します。上流が正常に完了しても何も生成しなかった場合は失敗として次の候補で再試行し、認証情報のクールダウンやブラックリスト登録は行いません。再試行を使い切った場合も空の応答をクライアントへ渡します。プリウォームと継続リクエストは対象外です。',
         responses_websocket_enabled: 'Responses WebSocket',
         websocketHelp:
           '無効化すると、このグループの WS 接続と生成を直ちに終了します。HTTP/SSE は影響を受けません。',
@@ -398,6 +401,12 @@ export default {
       settings: '設定',
     },
     credentials: {
+      name: '名前',
+      namePlaceholder: '認証情報の表示名（任意）',
+      nameSaveFailed: '名前を保存できませんでした。再試行してください。',
+      showAccount: 'アカウント全体を表示',
+      hideAccount: 'アカウント全体を隠す',
+
       modelCooldown: {
         label: 'モデルクールダウン',
         count: 'モデルクールダウン · {count}',
@@ -588,6 +597,8 @@ export default {
         moreActions: 'その他の操作',
         autoRenews: '使用時に自動更新',
         resetCredits: 'リセットクレジット',
+        creditBalance: 'クレジット',
+        creditUnlimited: '無制限',
         resetCreditsCount: '{count} 件利用可能',
         resetCreditsTooltipTitle: 'リセットクレジットの詳細',
         resetCreditsTooltipItem: '{index} 件目：{expires}',
@@ -721,6 +732,7 @@ export default {
       },
       full: {
         actions: '全件操作',
+        import: 'ファイルからインポート',
         download: 'すべてダウンロード',
         enable: 'すべて有効化',
         disable: 'すべて無効化',
@@ -749,6 +761,15 @@ export default {
           restore: '{count} 件の{kind}を回復しました',
         },
         failed: '全件操作を完了できません',
+      },
+      fileImport: {
+        description:
+          'ファイル内の {count} 件の認証情報をこのグループに追加します。既存の重複はスキップします。',
+        empty: '選択したファイルに認証情報がありません。',
+        too_large: 'インポート内容が 32 MiB を超えています。ファイルを分割してください。',
+        too_many: '一度にインポートできる認証情報は 5000 件までです。ファイルを分割してください。',
+        read_failed:
+          'ファイルを読み込めません。UTF-8 の TXT、JSON または JSONL ファイルを選択してください。',
       },
       batch: {
         selected: '{count} 件を選択',

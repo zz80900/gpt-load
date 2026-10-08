@@ -41,6 +41,8 @@ type GroupCollectionCredentialCounts struct {
 }
 
 type GroupCollectionItem struct {
+	Priority         int32                           `json:"priority"`
+	Concurrency      ConcurrencyView                 `json:"concurrency"`
 	PriceMultiplier  string                          `json:"price_multiplier"`
 	ID               uint                            `json:"id"`
 	Name             string                          `json:"name"`
@@ -137,6 +139,10 @@ func (s *Service) captureGroupCollectionRecords(
 	}
 	if err != nil {
 		return 0, nil, err
+	}
+	counts := s.manager.Concurrency().Snapshot()
+	for i := range records {
+		records[i].Concurrency = ConcurrencyView{Current: counts.Groups[records[i].ID], Limit: snapshot.Groups[records[i].ID].ConcurrencyLimit}
 	}
 	return observedAt.UnixMilli(), records, nil
 }
@@ -239,6 +245,7 @@ func mapGroupCollectionRecords(
 		if catalog.ID != group.ID ||
 			catalog.Name != group.Name ||
 			catalog.Enabled != group.Enabled ||
+			catalog.Priority != group.Priority ||
 			!equalGroupCollectionWeight(catalog.WeightManual, group.WeightManual) {
 			return nil, groupCollectionDataError(
 				"persisted group %d differs from runtime catalog",
@@ -356,22 +363,29 @@ func mapGroupCollectionRecords(
 				err,
 			)
 		}
+		visibleModels := make([]GroupModel, 0, len(groupModels))
+		for _, model := range groupModels {
+			if !isBuiltInCodexLiveModel(group.ChannelID, model.ID) {
+				visibleModels = append(visibleModels, model)
+			}
+		}
 
 		catalog := snapshot.GroupCatalog[group.ID]
 		record := groupCollectionRecord{
 			GroupCollectionItem: GroupCollectionItem{
+				Priority:        group.Priority,
 				PriceMultiplier: priceMultiplierResponse(group.PriceMultiplierMicros),
 				ID:              group.ID, Name: group.Name, ChannelID: channelID,
 				ConnectionType: normalizeGroupConnectionType(group.ConnectionType),
 				Params:         append(json.RawMessage(nil), params...),
-				ModelCount:     int64(len(groupModels)),
+				ModelCount:     int64(len(visibleModels)),
 			},
 			CreatedAtMS: group.CreatedAtMS,
 			Enabled:     group.Enabled,
 			Weight:      state.ConfiguredWeight(group.WeightManual),
-			ModelNames:  make([]string, 0, len(groupModels)),
+			ModelNames:  make([]string, 0, len(visibleModels)),
 		}
-		for _, model := range groupModels {
+		for _, model := range visibleModels {
 			// 通配符别名匹配的是无穷集合，不能进入可选名称列表；这里给出的是客户端
 			// 真正能枚举到的具体名称，与模型页、价格引用计数保持同一口径。
 			record.ModelNames = append(
@@ -513,7 +527,7 @@ func groupCollectionStatusAndReason(
 		reason := GroupUnavailableReasonNoAvailableCredentials
 		return GroupCollectionStatusUnavailable, &reason
 	}
-	if modelCount > 0 {
+	if modelCount > 0 || group.ChannelID == channel.Codex {
 		return GroupCollectionStatusAvailable, nil
 	}
 	reason := GroupUnavailableReasonNoModels

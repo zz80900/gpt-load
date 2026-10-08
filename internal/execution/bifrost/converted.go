@@ -123,6 +123,12 @@ func buildConvertedResponsesRequest(spec execution.AttemptSpec, provider schemas
 	request.Model = spec.UpstreamModel
 	request.Fallbacks = nil
 	request.RawRequestBody = nil
+	if request.Params == nil {
+		request.Params = &schemas.ResponsesParameters{}
+	}
+	if err := mergeConvertedParameterOverrides(spec, &request.Params.ExtraParams); err != nil {
+		return nil, err
+	}
 	stripResponsesControlParams(request.Params)
 	return request, nil
 }
@@ -297,7 +303,13 @@ func (r *Runtime) executeConvertedResponses(
 	setTypedRequestURL(bifrostContext, prepared.typedURL)
 	outcomeChannel := make(chan responsesUnarySDKResult, 1)
 	go func() {
-		response, bifrostError := r.core.ResponsesRequest(bifrostContext, prepared.responsesRequest)
+		var response *schemas.BifrostResponsesResponse
+		var bifrostError *schemas.BifrostError
+		if r.usesCompatibleChat(spec) {
+			response, bifrostError = r.compatibleResponsesRequest(bifrostContext, prepared.responsesRequest)
+		} else {
+			response, bifrostError = r.core.ResponsesRequest(bifrostContext, prepared.responsesRequest)
+		}
 		outcomeChannel <- responsesUnarySDKResult{response: response, err: bifrostError}
 	}()
 
@@ -615,7 +627,13 @@ func (r *Runtime) executeConvertedResponsesStream(
 	setTypedRequestURL(bifrostContext, prepared.typedURL)
 	outcomeChannel := make(chan responsesStreamSDKResult, 1)
 	go func() {
-		stream, bifrostError := r.core.ResponsesStreamRequest(bifrostContext, prepared.responsesRequest)
+		var stream chan *schemas.BifrostStreamChunk
+		var bifrostError *schemas.BifrostError
+		if r.usesCompatibleChat(spec) {
+			stream, bifrostError = r.compatibleResponsesStream(bifrostContext, prepared.responsesRequest)
+		} else {
+			stream, bifrostError = r.core.ResponsesStreamRequest(bifrostContext, prepared.responsesRequest)
+		}
 		outcomeChannel <- responsesStreamSDKResult{stream: stream, err: bifrostError}
 	}()
 

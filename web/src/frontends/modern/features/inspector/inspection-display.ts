@@ -19,9 +19,11 @@ export function groupsWeight(groups: readonly InspectionGroup[]): number {
 export function activeGroups(result: Inspection): InspectionGroup[] {
   if (!result.routable) return []
   const available = result.groups.filter((group) => group.included && group.routable)
-  if (result.strategy === 'weighted_mix') return available
-  const mode = available.some((group) => group.mode === 'native') ? 'native' : 'converted'
-  return available.filter((group) => group.mode === mode)
+  const priority = Math.max(...available.map((group) => group.priority))
+  const tier = available.filter((group) => group.priority === priority)
+  if (result.strategy === 'weighted_mix') return tier
+  const mode = tier.some((group) => group.mode === 'native') ? 'native' : 'converted'
+  return tier.filter((group) => group.mode === mode)
 }
 export function reasonLabel(reason: string | null, t: (key: string) => string): string {
   const known = [
@@ -33,6 +35,7 @@ export function reasonLabel(reason: string | null, t: (key: string) => string): 
     'operation_unsupported',
     'native_route_required',
     'no_route_target',
+    'codex_live_disabled',
     'group_disabled',
     'group_filtered',
     'no_available_group',

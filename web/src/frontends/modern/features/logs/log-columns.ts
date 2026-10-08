@@ -5,6 +5,7 @@ import { logCanMergeError } from './log-display'
 export const logColumnIds = [
   'completed_at_ms',
   'request_id',
+  'client_ip',
   'client_model',
   'protocol',
   'operation',
@@ -54,7 +55,7 @@ export interface LogColumn {
   admin: boolean
   grow: number
 }
-// 表格列：细分缓存写入与两个完整性状态只在详情面板展示，不进表格与列选择器。
+// 表格列：计价信息合并进费用；细分缓存写入与完整性状态只在详情面板展示。
 const definitions: readonly [LogColumnId, number, LogColumnSection, boolean, boolean?, number?][] =
   [
     ['completed_at_ms', 80, 'request', true],
@@ -77,18 +78,16 @@ const definitions: readonly [LogColumnId, number, LogColumnSection, boolean, boo
     ['output_tokens', 56, 'tokens', true],
     ['cache_read_tokens', 60, 'tokens', true],
     ['cache_hit_rate', 56, 'tokens', true],
-    ['estimated_cost_nano_usd', 76, 'billing', true],
+    ['estimated_cost_nano_usd', 132, 'billing', true],
     // 用户额外选择的字段统一追加，不打断默认列和错误摘要区域。
     ['request_id', 180, 'request', false],
+    ['client_ip', 160, 'request', false],
     ['operation', 88, 'request', false],
     ['upstream_reported_model', 152, 'models', false, true],
     ['error_code', 132, 'result', false],
     ['error_summary', 200, 'result', false, false, 2],
     ['cache_write_tokens', 60, 'tokens', false],
     ['total_tokens', 56, 'tokens', false],
-    ['pricing_mode', 64, 'billing', false],
-    ['context_threshold_tokens', 72, 'billing', false],
-    ['cost_state', 64, 'billing', false],
   ]
 
 const previousDefaultColumns: readonly LogColumnId[] = [
@@ -122,7 +121,6 @@ export const numericColumns: ReadonlySet<LogColumnId> = new Set([
   'cache_write_tokens',
   'total_tokens',
   'estimated_cost_nano_usd',
-  'context_threshold_tokens',
 ])
 export const logColumns: readonly LogColumn[] = definitions.map(
   ([id, width, section, defaultVisible, admin, grow]) => ({
@@ -149,7 +147,9 @@ export function useLogColumns(admin: boolean) {
         .map((id) =>
           id === 'upstream_model' || id === 'model_consistency' || id === 'features'
             ? 'client_model'
-            : id,
+            : id === 'pricing_mode' || id === 'context_threshold_tokens' || id === 'cost_state'
+              ? 'estimated_cost_nano_usd'
+              : id,
         )
         .filter(
           (id): id is LogColumnId => typeof id === 'string' && availableIDs.has(id as LogColumnId),
@@ -189,7 +189,6 @@ export function useLogColumns(admin: boolean) {
     'cache_read_tokens-cache_hit_rate',
     'cache_write_tokens-total_tokens',
     'route_mode-affinity_hit',
-    'pricing_mode-context_threshold_tokens',
   ])
   const pairs: readonly (readonly [LogColumnId, LogColumnId, number])[] = [
     ['reasoning_mode', 'stream', 88],
@@ -202,7 +201,6 @@ export function useLogColumns(admin: boolean) {
     ['input_tokens', 'output_tokens', 68],
     ['cache_read_tokens', 'cache_hit_rate', 68],
     ['cache_write_tokens', 'total_tokens', 68],
-    ['pricing_mode', 'context_threshold_tokens', 80],
   ]
   const cells = computed(() => {
     const consumed = new Set<LogColumnId>()

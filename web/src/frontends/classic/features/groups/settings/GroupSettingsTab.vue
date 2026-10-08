@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { isValidGroupPriority } from '@shared/group-priority'
+import { codexLiveModes, type CodexLiveMode } from '@shared/codex-live'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -107,6 +110,7 @@ const {
 const timeoutKeys = groupTimeoutKeys
 const policyCountKeys = groupPolicyCountKeys
 const policyRows = [
+  { key: 'concurrency_limit', helpKey: 'concurrencyHelp' },
   {
     key: 'blacklist_threshold',
     helpKey: 'blacklistThresholdHelp',
@@ -181,6 +185,7 @@ const dirty = computed(
   () =>
     !deleted.value &&
     (Object.keys(patch.value).length > 0 ||
+      (draft.value !== undefined && !isValidGroupPriority(draft.value.priority)) ||
       headerRulesInvalidEdits.value ||
       parameterOverridesInvalidEdits.value ||
       proxyState.value.dirty),
@@ -237,6 +242,7 @@ const valid = computed(
   () =>
     !nameError.value &&
     Object.keys(paramErrors.value).length === 0 &&
+    isValidGroupPriority(draft.value?.priority ?? '') &&
     weightValid.value &&
     isValidPriceMultiplier(draft.value?.price_multiplier ?? '') &&
     timeoutValid.value &&
@@ -266,6 +272,17 @@ const affinityEnabledLabel = computed(() =>
     ? t('group.settings.runtime.enabledValue')
     : t('group.settings.runtime.disabledValue'),
 )
+const liveOptions = computed(() => [
+  { value: '', label: t('group.settings.runtime.inherited') },
+  ...codexLiveModes.map((value) => ({ value, label: t('settings.runtime.liveModes.' + value) })),
+])
+function setLiveMode(value: string): void {
+  if (!draft.value) return
+  const overrides = { ...draft.value.overrides }
+  if (value) overrides.codex_live_mode = value as CodexLiveMode
+  else delete overrides.codex_live_mode
+  draft.value = { ...draft.value, overrides }
+}
 const websocketOverridden = computed(
   () => draft.value?.overrides.responses_websocket_enabled !== undefined,
 )
@@ -275,6 +292,19 @@ const websocketPendingRestore = computed(
 )
 const websocketEnabledLabel = computed(() =>
   saved.value?.effective.responses_websocket_enabled
+    ? t('group.settings.runtime.enabledValue')
+    : t('group.settings.runtime.disabledValue'),
+)
+const emptyResponseRetryOverridden = computed(
+  () => draft.value?.overrides.empty_response_retry !== undefined,
+)
+const emptyResponseRetryPendingRestore = computed(
+  () =>
+    !emptyResponseRetryOverridden.value &&
+    saved.value?.overrides.empty_response_retry !== undefined,
+)
+const emptyResponseRetryLabel = computed(() =>
+  saved.value?.effective.empty_response_retry
     ? t('group.settings.runtime.enabledValue')
     : t('group.settings.runtime.disabledValue'),
 )
@@ -465,6 +495,22 @@ function setWebsocketValue(value: boolean): void {
   draft.value = {
     ...draft.value,
     overrides: { ...draft.value.overrides, responses_websocket_enabled: value },
+  }
+}
+
+function toggleEmptyResponseRetryOverride(): void {
+  if (!draft.value || !saved.value) return
+  const overrides = { ...draft.value.overrides }
+  if (emptyResponseRetryOverridden.value) delete overrides.empty_response_retry
+  else overrides.empty_response_retry = saved.value.effective.empty_response_retry
+  draft.value = { ...draft.value, overrides }
+}
+
+function setEmptyResponseRetryValue(value: boolean): void {
+  if (!draft.value) return
+  draft.value = {
+    ...draft.value,
+    overrides: { ...draft.value.overrides, empty_response_retry: value },
   }
 }
 
@@ -662,6 +708,7 @@ onBeforeUnmount(() => {
             :validation-protocol="draft.validation_protocol"
             :validation-protocols="saved?.validation_protocols ?? []"
             :models="modelsQuery.data.value?.items ?? []"
+            :priority="draft.priority"
             :weight-manual="draft.weight_manual"
             :price-multiplier="draft.price_multiplier"
             :enabled="draft.enabled"
@@ -674,6 +721,7 @@ onBeforeUnmount(() => {
             @update:name="draft.name = $event"
             @update:validation-model="draft.validation_model = $event"
             @update:validation-protocol="draft.validation_protocol = $event"
+            @update:priority="draft.priority = $event"
             @update:weight-manual="draft.weight_manual = $event"
             @update:price-multiplier="draft.price_multiplier = $event"
             @update:enabled="draft.enabled = $event"
@@ -691,6 +739,7 @@ onBeforeUnmount(() => {
             :validation-protocol="draft.validation_protocol"
             :validation-protocols="saved?.validation_protocols ?? []"
             :models="modelsQuery.data.value?.items ?? []"
+            :priority="draft.priority"
             :weight-manual="draft.weight_manual"
             :price-multiplier="draft.price_multiplier"
             :enabled="draft.enabled"
@@ -702,6 +751,7 @@ onBeforeUnmount(() => {
             @update:name="draft.name = $event"
             @update:validation-model="draft.validation_model = $event"
             @update:validation-protocol="draft.validation_protocol = $event"
+            @update:priority="draft.priority = $event"
             @update:weight-manual="draft.weight_manual = $event"
             @update:price-multiplier="draft.price_multiplier = $event"
             @update:enabled="draft.enabled = $event"
@@ -712,6 +762,15 @@ onBeforeUnmount(() => {
               <p>{{ t('group.settings.runtime.description') }}</p>
             </header>
             <div class="group-settings__runtime">
+              <div v-if="draft.channel_id === 'codex'">
+                <AppSelect
+                  :model-value="draft.overrides.codex_live_mode ?? ''"
+                  :options="liveOptions"
+                  :label="t('settings.runtime.codex_live_mode')"
+                  :disabled="mutationPending"
+                  @update:model-value="setLiveMode"
+                />
+              </div>
               <SettingRow
                 :label="t('group.settings.runtime.responses_websocket_enabled')"
                 :value="
@@ -743,6 +802,40 @@ onBeforeUnmount(() => {
                     :disabled="mutationPending"
                     :label="t('group.settings.runtime.responses_websocket_enabled')"
                     @update:model-value="setWebsocketValue"
+                  />
+                </template>
+              </SettingRow>
+              <SettingRow
+                :label="t('group.settings.runtime.empty_response_retry')"
+                :value="
+                  emptyResponseRetryPendingRestore
+                    ? t('group.settings.runtime.resetPending')
+                    : emptyResponseRetryLabel
+                "
+                :help="t('group.settings.runtime.emptyResponseRetryHelp')"
+                :source-label="
+                  emptyResponseRetryOverridden
+                    ? t('group.settings.runtime.override')
+                    : emptyResponseRetryPendingRestore
+                      ? t('group.settings.runtime.pendingRestoreSource')
+                      : t('group.settings.runtime.inherited')
+                "
+                :action-label="
+                  emptyResponseRetryOverridden
+                    ? t('group.settings.runtime.useInherited')
+                    : t('group.settings.runtime.useOverride')
+                "
+                :overridden="emptyResponseRetryOverridden"
+                :pending-restore="emptyResponseRetryPendingRestore"
+                :disabled="mutationPending"
+                @toggle="toggleEmptyResponseRetryOverride"
+              >
+                <template #control>
+                  <AppSwitch
+                    :model-value="draft.overrides.empty_response_retry ?? false"
+                    :disabled="mutationPending"
+                    :label="t('group.settings.runtime.empty_response_retry')"
+                    @update:model-value="setEmptyResponseRetryValue"
                   />
                 </template>
               </SettingRow>

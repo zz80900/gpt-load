@@ -1,5 +1,8 @@
+import { zhCN as proxies } from '@shared/proxies/messages'
+import { zhCN as concurrency } from './concurrency'
 import { zhCN as requestRedaction } from './request-redaction'
 import { zhCN as experimental } from './experimental'
+import { zhCN as rpm } from './rpm'
 import { protocolMessages as protocols } from '../protocols'
 import { zhCN as inspector } from './inspector'
 import { zhCN as home } from './home'
@@ -21,8 +24,11 @@ import { zhCN as autoModel } from './auto-model'
 import { zhCN as subscriptions } from './subscriptions'
 
 export default {
+  proxies,
+  concurrency,
   requestRedaction,
   ...experimental,
+  rpm,
   home,
   inspector,
   protocols,
@@ -99,6 +105,7 @@ export default {
     },
   },
   pages: {
+    proxies: { title: proxies.title },
     home: { title: '总览' },
     groups: { title: '分组' },
     groupDetail: { title: '分组详情' },

@@ -1,3 +1,4 @@
+import { credentialDisplayText } from '@shared/credential-display'
 import { readAuditResult, type AuditResult } from './experimental'
 import type { ApiClient } from '@shared/http/client'
 import { ApiError, InvalidResponseError } from '@shared/http/errors'
@@ -21,6 +22,16 @@ export const logOperations = [
   'embeddings_create',
   'rerank',
   'decisions_create',
+  'mistral_ocr',
+  'mistral_fim',
+  'mistral_audio_transcription',
+  'mistral_audio_speech',
+  'mistral_moderation',
+  'mistral_chat_moderation',
+  'mistral_classification',
+  'mistral_voices',
+  'mistral_realtime_transcription',
+  'live_call',
   'list_models',
   'probe',
 ] as const
@@ -31,6 +42,7 @@ export const logFilterNames = [
   'group_id',
   'channel_id',
   'credential_id',
+  'client_ip',
   'client_model',
   'upstream_model',
   'model_consistency',
@@ -99,6 +111,7 @@ export interface LogEntry {
   protocol: string
   operation: string | null
   upstream_protocol: string | null
+  client_ip: string | null
   client_model: string | null
   upstream_model: string | null
   upstream_reported_model: string | null
@@ -295,6 +308,7 @@ function entry(value: unknown): LogEntry {
     protocol: text(row.protocol),
     operation: optionalText(row.operation),
     upstream_protocol: optionalText(row.upstream_protocol),
+    client_ip: optionalText(row.client_ip),
     client_model: optionalText(row.client_model),
     upstream_model: optionalText(row.upstream_model),
     upstream_reported_model: optionalText(row.upstream_reported_model),
@@ -313,7 +327,11 @@ function entry(value: unknown): LogEntry {
     group_id: optionalNumber(row.group_id),
     channel_id: optionalText(row.channel_id),
     credential_id: optionalNumber(row.credential_id),
-    credential_name: text(row.credential_name),
+    credential_name: credentialDisplayText(
+      text(row.credential_alias ?? ''),
+      text(row.credential_name),
+      text(row.credential_connection_type ?? ''),
+    ),
     credential_deleted: row.credential_id != null && row.credential_name === '',
     route_mode: optionalText(row.route_mode),
     usage_state: oneOf(row.usage_state, [
@@ -373,7 +391,11 @@ function autoDecision(value: unknown): LogAutoDecision {
     provider: text(row.provider ?? ''),
     group_name: text(row.group_name ?? ''),
     channel_name: text(row.channel_name ?? ''),
-    credential_name: text(row.credential_name ?? ''),
+    credential_name: credentialDisplayText(
+      text(row.credential_alias ?? ''),
+      text(row.credential_name ?? ''),
+      text(row.credential_connection_type ?? ''),
+    ),
     credential_deleted: boolean(row.credential_deleted ?? false),
     requested_model: text(row.requested_model ?? ''),
     upstream_model: text(row.upstream_model ?? ''),
@@ -440,7 +462,11 @@ export async function getLogDetail(
         group_name: text(item.group_name),
         channel_id: optionalText(item.channel_id),
         credential_id: optionalNumber(item.credential_id),
-        credential_name: text(item.credential_name),
+        credential_name: credentialDisplayText(
+          text(item.credential_alias ?? ''),
+          text(item.credential_name),
+          text(item.credential_connection_type ?? ''),
+        ),
         credential_deleted: item.credential_id != null && item.credential_name === '',
         operation: optionalText(item.operation),
         route_mode: optionalText(item.route_mode),

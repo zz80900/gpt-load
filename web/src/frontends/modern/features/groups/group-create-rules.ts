@@ -12,6 +12,20 @@ export interface GroupDraftModel extends ModelDraft {
   key: number
   origin: 'manual' | 'discovery' | 'configured'
 }
+export function groupConnectionParams(
+  params: Readonly<Record<string, string>>,
+  channel: GroupChannel | undefined,
+): Record<string, string> {
+  // 可选地址留空时省略字段，让后端使用渠道默认值。
+  const optionalBaseURL = channel?.fields.some(
+    (field) => field.key === 'base_url' && !field.required,
+  )
+  return Object.fromEntries(
+    Object.entries(params)
+      .map(([key, value]) => [key, value.trim()])
+      .filter(([key, value]) => key !== 'base_url' || value || !optionalBaseURL),
+  )
+}
 
 /** 错误归属的列：ID 输入、别名 tag 输入或 Claude 适配开关。 */
 export type ModelColumn = 'id' | 'alias' | 'claude'

@@ -10,6 +10,8 @@ import (
 )
 
 func TestRequestAuditMigrationContract(t *testing.T) {
+	t.Parallel()
+
 	testRequestAuditMigration(t, openInternalMigrationTestDatabase)
 }
 func TestExternalRequestAuditMigrationContract(t *testing.T) {
@@ -23,15 +25,18 @@ func testRequestAuditMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 	for _, scenario := range []string{"fresh", "upgrade", "interrupted_column", "interrupted_table"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := open(t)
+			if db.Dialector.Name() == "sqlite" {
+				t.Parallel()
+			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:20]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:21]); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if strings.HasPrefix(scenario, "interrupted") {
 				registry := append([]migration(nil), migrations...)
-				up := registry[20].Up
-				registry[20].Up = func(tx *gorm.DB) error {
+				up := registry[21].Up
+				registry[21].Up = func(tx *gorm.DB) error {
 					if scenario == "interrupted_column" {
 						if err := tx.Exec("ALTER TABLE request_logs ADD COLUMN request_audit JSON").Error; err != nil {
 							return err

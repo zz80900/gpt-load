@@ -1,9 +1,10 @@
+import { readConcurrency, type ConcurrencyView } from '@shared/concurrency'
 import type { ApiClient } from '@shared/http/client'
 import { InvalidResponseError } from '@shared/http/errors'
 import { boolean, integer, list, oneOf, record, text } from './response'
 import { protocolOrder, sortProtocols } from '@modern/i18n/protocols'
 
-export const accessKeySorts = ['updated_desc', 'cost_desc', 'expires_asc'] as const
+export const accessKeySorts = ['updated_desc', 'cost_desc', 'expires_asc', 'rpm_peak_desc'] as const
 export const accessProtocols = protocolOrder
 export interface AccessScope {
   groups: number[]
@@ -26,12 +27,14 @@ export interface CostWindow extends CostRule {
   window_ends_at_ms: number | null
 }
 export interface AccessKey {
+  concurrency: ConcurrencyView
   id: number
   name: string
   masked_key: string
   status: 'active' | 'disabled'
   filters: AccessScope
   expires_at_ms: number | null
+  concurrency_limit: number | null
   rpm_limit: number
   price_multiplier: string
   cost_limit_rules: CostRule[]
@@ -46,6 +49,7 @@ export interface AccessKey {
   updated_at_ms: number
 }
 export interface AccessKeyRow extends AccessKey {
+  rpmPeakHour?: number
   expired: boolean
   last_request_at_ms: number | null
   usage?: { request_count: number; total_tokens: number; estimated_cost_nano_usd: string }
@@ -71,6 +75,7 @@ export interface AccessInput {
   status: AccessKey['status']
   filters: AccessScope
   expires_at_ms: number | null
+  concurrency_limit: number | null
   rpm_limit: number
   price_multiplier: string
   cost_limit_rules: CostRule[]
@@ -121,6 +126,8 @@ function readAccessKey(value: unknown): AccessKey {
       allowed_cidrs: list(scope.allowed_cidrs).map(text),
     },
     expires_at_ms: timestamp(row.expires_at_ms),
+    concurrency_limit: row.concurrency_limit == null ? null : integer(row.concurrency_limit),
+    concurrency: readConcurrency(row.concurrency),
     rpm_limit: integer(row.rpm_limit),
     price_multiplier: decimal(row.price_multiplier),
     cost_limit_rules: list(row.cost_limit_rules).map(readRule),
@@ -144,6 +151,7 @@ export function readAccessKeyRow(value: unknown): AccessKeyRow {
   if (cost !== undefined && !/^\d+$/.test(cost)) throw new InvalidResponseError()
   return {
     ...readAccessKey(row),
+    rpmPeakHour: row.rpm_peak_hour == null ? undefined : integer(row.rpm_peak_hour),
     expired: boolean(row.expired),
     last_request_at_ms: timestamp(row.last_request_at_ms),
     ...(usage
@@ -171,7 +179,7 @@ export async function getAccessKeys(
   if (filters.status) params.set('status', filters.status)
   if (filters.group) params.set('group_id', filters.group)
   if (filters.expiry) params.set('expiry', filters.expiry)
-  const data = record(await client.request(`/api/access-keys?${params}`, { signal }))
+  const data = record(await client.request(`/api/modern/access-keys?${params}`, { signal }))
   const summary = record(data.summary)
   const pagination = record(data.pagination)
   const window = record(data.usage_window)

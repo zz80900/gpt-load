@@ -14,6 +14,7 @@ import (
 	"gpt-load/internal/httplifecycle"
 	"gpt-load/internal/platform/config"
 	"gpt-load/internal/platform/i18n"
+	"gpt-load/internal/platform/utils"
 	"gpt-load/internal/platform/version"
 	"gpt-load/internal/storage"
 
@@ -36,6 +37,7 @@ type App struct {
 	startupRecovery   StartupRecovery
 	requestLogs       RequestLogRuntime
 	executionRuntime  ExecutionRuntime
+	liveSessions      LiveSessionRuntime
 	listen            func(network, address string) (net.Listener, error)
 
 	mu            sync.Mutex
@@ -79,6 +81,11 @@ type ExecutionRuntime interface {
 	BeginShutdown() <-chan struct{}
 }
 
+// LiveSessionRuntime releases long-lived media and control connections before HTTP draining.
+type LiveSessionRuntime interface {
+	CloseCodexLive()
+}
+
 // AppParams defines dependencies injected into App.
 type AppParams struct {
 	dig.In
@@ -93,21 +100,29 @@ type AppParams struct {
 	Lifecycle         *httplifecycle.Coordinator `optional:"true"`
 	ControlRuntime    ControlRuntime
 	RequestLogs       RequestLogRuntime
-	ExecutionRuntime  ExecutionRuntime `optional:"true"`
+	ExecutionRuntime  ExecutionRuntime   `optional:"true"`
+	LiveSessions      LiveSessionRuntime `optional:"true"`
 }
 
 // NewEngine creates the process HTTP engine and global middleware.
 func NewEngine() (*gin.Engine, error) {
-	return newEngine(nil)
+	return newEngine(nil, nil)
 }
 
 // NewEngineWithLifecycle adds process-wide handler tracking used by the
 // production shutdown coordinator.
-func NewEngineWithLifecycle(lifecycle *httplifecycle.Coordinator) (*gin.Engine, error) {
-	return newEngine(lifecycle)
+func NewEngineWithLifecycle(lifecycle *httplifecycle.Coordinator, cfg *config.Config) (*gin.Engine, error) {
+	return newEngine(lifecycle, cfg)
 }
 
-func newEngine(lifecycle *httplifecycle.Coordinator) (*gin.Engine, error) {
+func newEngine(lifecycle *httplifecycle.Coordinator, cfg *config.Config) (*gin.Engine, error) {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	resolver, err := utils.NewClientIPResolver(cfg.ClientIPHeader, cfg.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -115,6 +130,7 @@ func newEngine(lifecycle *httplifecycle.Coordinator) (*gin.Engine, error) {
 		return nil, fmt.Errorf("disable trusted proxies: %w", err)
 	}
 	engine.Use(recoveryMiddleware())
+	engine.Use(func(c *gin.Context) { c.Request = resolver.Apply(c.Request) })
 	if lifecycle != nil {
 		engine.Use(lifecycle.TrackAll())
 	}
@@ -135,6 +151,7 @@ func NewApp(params AppParams) *App {
 		startupRecovery:   params.StartupRecovery,
 		requestLogs:       params.RequestLogs,
 		executionRuntime:  params.ExecutionRuntime,
+		liveSessions:      params.LiveSessions,
 		listen:            net.Listen,
 		serveErrors:       make(chan error, 1),
 	}
@@ -273,6 +290,7 @@ func (a *App) Stop(ctx context.Context) error {
 	runtimeDone := a.runtimeDone
 	requestLogs := a.requestLogs
 	executionRuntime := a.executionRuntime
+	liveSessions := a.liveSessions
 	runtimeCheckpoint := a.runtimeCheckpoint
 	lifecycle := a.lifecycle
 	a.mu.Unlock()
@@ -284,6 +302,9 @@ func (a *App) Stop(ctx context.Context) error {
 	}
 	if cancelRuntime != nil {
 		cancelRuntime()
+	}
+	if liveSessions != nil {
+		liveSessions.CloseCodexLive()
 	}
 	var executionShutdownDone <-chan struct{}
 	if executionRuntime != nil {

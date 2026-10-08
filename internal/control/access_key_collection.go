@@ -10,11 +10,13 @@ import (
 	"gpt-load/internal/platform/epochms"
 	app_errors "gpt-load/internal/platform/errors"
 	"gpt-load/internal/requestlog"
+	"gpt-load/internal/rpm"
 	"gpt-load/internal/storage/models"
 )
 
 type AccessKeyCollectionItem struct {
 	AccessKeyMetadata
+	RPMPeakHour     *int64                              `json:"-"`
 	Usage           *usageDistributionAggregateResponse `json:"usage,omitempty"`
 	LastRequestAtMS *int64                              `json:"last_request_at_ms"`
 	Expired         bool                                `json:"expired"`
@@ -53,6 +55,7 @@ type accessKeyCollectionRecord struct {
 }
 
 type accessKeyCollectionRow struct {
+	ConcurrencyLimit      *int64
 	KeyPrefix             string
 	PriceMultiplierMicros *int64
 	ID                    uint
@@ -93,6 +96,18 @@ func (s *Service) ListAccessKeyCollection(
 	if err != nil {
 		return AccessKeyCollectionResponse{}, err
 	}
+	if query.modern {
+		ids := make([]uint, len(records))
+		for i, record := range records {
+			ids[i] = record.ID
+		}
+		peaks := s.rpmPeaks(ctx, rpm.AccessKey, ids, observedAt)
+		for i := range records {
+			if peak, ok := peaks[records[i].ID]; ok {
+				records[i].RPMPeakHour = &peak
+			}
+		}
+	}
 	result := queryAccessKeyCollectionRecords(records, query)
 	result.UsageWindow = &AccessKeyUsageWindow{ObservedAtMS: observedAtMS, Range: "7d", FromMS: usageQuery.FromMS, ToMS: usageQuery.ToMS}
 	return result, nil
@@ -124,7 +139,7 @@ func (s *Service) captureAccessKeyCollectionRecords(
 		if err := tx.Model(&models.AccessKey{}).
 			Select(
 				"access_keys.id", "access_keys.name", "access_keys.key_prefix", "access_keys.key_suffix",
-				"access_keys.status", "access_keys.filters", "access_keys.rpm_limit",
+				"access_keys.status", "access_keys.filters", "access_keys.rpm_limit", "access_keys.concurrency_limit",
 				"access_keys.expires_at_ms", "access_keys.price_multiplier_micros",
 				"access_keys.created_at_ms", "access_keys.updated_at_ms",
 				"(SELECT MAX(request_logs.completed_at_ms) FROM request_logs WHERE request_logs.access_key_id = access_keys.id) AS last_request_at_ms",
@@ -166,6 +181,7 @@ func (s *Service) captureAccessKeyCollectionRecords(
 			Status:                row.Status,
 			Filters:               row.Filters,
 			RPMLimit:              row.RPMLimit,
+			ConcurrencyLimit:      row.ConcurrencyLimit,
 			ExpiresAtMS:           row.ExpiresAtMS,
 			CreatedAtMS:           row.CreatedAtMS,
 			UpdatedAtMS:           row.UpdatedAtMS,
@@ -173,6 +189,7 @@ func (s *Service) captureAccessKeyCollectionRecords(
 		if err != nil {
 			return nil, err
 		}
+		s.fillAccessKeyConcurrency(&metadata)
 		metadata.CostLimitRules = mapAccessKeyCostLimitRules(rulesByAccessKey[row.ID])
 		if s.accessQuota != nil {
 			status := mapAccessKeyCostLimitStatus(s.accessQuota.Snapshot(row.ID, observedAt))

@@ -46,6 +46,7 @@ type CompileInput struct {
 }
 
 type GroupConfig struct {
+	Priority           int32
 	PriceMultiplier    *pricing.PriceMultiplier
 	ID                 uint
 	Name               string
@@ -226,6 +227,7 @@ func modelExternalNames(models []ModelConfig, ownerID string) []string {
 }
 
 type AccessKeyConfig struct {
+	ConcurrencyLimit *int64
 	KeyPrefix        string
 	PriceMultiplier  *pricing.PriceMultiplier
 	ID               uint
@@ -313,6 +315,8 @@ func (rules HeaderRules) ConfiguredNames() []string {
 }
 
 type GroupView struct {
+	Priority                  int32
+	ConcurrencyLimit          int64
 	PriceMultiplier           pricing.PriceMultiplier
 	ID                        uint
 	Name                      string
@@ -328,13 +332,16 @@ type GroupView struct {
 	HeaderRules               HeaderRules
 	BlacklistThreshold        int
 	AffinityEnabled           bool
+	CodexLiveMode             CodexLiveMode
 	ResponsesWebsocketEnabled bool
+	EmptyResponseRetry        bool
 	WeightManual              *int
 	Proxy                     outboundproxy.Effective
 	ParameterOverrides        parameteroverride.Rules
 }
 
 type GroupCatalogView struct {
+	Priority       int32
 	ID             uint
 	Name           string
 	ChannelID      channel.ID
@@ -344,6 +351,7 @@ type GroupCatalogView struct {
 }
 
 type AccessKeyView struct {
+	ConcurrencyLimit *int64
 	KeyPrefix        string
 	PriceMultiplier  pricing.PriceMultiplier
 	ID               uint
@@ -496,7 +504,8 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 
 	for _, group := range input.Groups {
 		catalogView := GroupCatalogView{
-			ID: group.ID, Name: group.Name, Enabled: group.Enabled,
+			Priority: group.Priority,
+			ID:       group.ID, Name: group.Name, Enabled: group.Enabled,
 			ChannelID:      group.ChannelID,
 			ConnectionType: connection.Normalize(group.ConnectionType),
 			WeightManual:   cloneWeight(group.WeightManual),
@@ -520,6 +529,7 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 		}
 
 		view := GroupView{
+			Priority:                  group.Priority,
 			PriceMultiplier:           resolvePriceMultiplier(group.PriceMultiplier),
 			ID:                        group.ID,
 			Name:                      group.Name,
@@ -530,7 +540,10 @@ func Compile(input CompileInput) (*ConfigSnapshot, error) {
 			HeaderRules:               resolved.HeaderRules,
 			BlacklistThreshold:        resolved.BlacklistThreshold,
 			AffinityEnabled:           resolved.AffinityEnabled,
+			CodexLiveMode:             resolved.CodexLiveMode,
 			ResponsesWebsocketEnabled: resolved.ResponsesWebsocketEnabled,
+			EmptyResponseRetry:        resolved.EmptyResponseRetry,
+			ConcurrencyLimit:          resolved.ConcurrencyLimit,
 			WeightManual:              cloneWeight(group.WeightManual),
 			ConnectionType:            connection.Normalize(group.ConnectionType),
 			Proxy:                     groupProxy,
@@ -593,6 +606,7 @@ func newAccessKeyView(input AccessKeyConfig) AccessKeyView {
 		ExpiresAtMS:      cloneAccessKeyExpiry(input.ExpiresAtMS),
 		AllowedPeerCIDRs: cloneAllowedPeerCIDRs(input.AllowedPeerCIDRs),
 		RPMLimit:         input.RPMLimit,
+		ConcurrencyLimit: cloneAccessKeyExpiry(input.ConcurrencyLimit),
 		CostLimitRules:   rules,
 	}
 }
@@ -632,7 +646,17 @@ func appendExecutionTargets(
 	if !ok {
 		return fmt.Errorf("compile group %d channel: unknown channel %q", group.ID, group.ChannelID)
 	}
-	// 模型配置是分组进入数据面调度的统一门槛；无模型资源请求也不能绕过。
+	// Codex Live 由客户端提供模型，不依赖分组的模型映射。
+	if group.ChannelID == channel.Codex {
+		mode, ok := target.Mode(protocol.CodexLive, execution.OperationLiveCall)
+		if !ok {
+			return fmt.Errorf("compile group %d channel has no Codex live route", group.ID)
+		}
+		appendExecutionTarget(index, protocol.CodexLive, execution.OperationLiveCall, NoModelRouteKey, RouteTarget{
+			GroupID: group.ID, Mode: mode, ResolvedTarget: cloneResolvedTarget(target),
+		})
+	}
+	// 其他操作仍要求分组配置模型；无模型资源请求也不能绕过。
 	if len(group.Models) == 0 {
 		return nil
 	}
@@ -646,6 +670,10 @@ func appendExecutionTargets(
 	claimed := make(map[string]struct{}, len(group.Models))
 	for _, model := range group.Models {
 		upstreamID := strings.TrimSpace(model.ID)
+		// 内置 Codex Live 模型由客户端提供，不参与分组的模型映射注册。
+		if group.ChannelID == channel.Codex && upstreamID == channel.CodexLiveModelID {
+			continue
+		}
 		for _, name := range RoutableModelNames(model) {
 			if _, duplicate := claimed[name]; duplicate {
 				continue
@@ -656,7 +684,8 @@ func appendExecutionTargets(
 	}
 	for _, clientProtocol := range descriptor.ClientProtocols {
 		for _, operation := range target.Operations(clientProtocol) {
-			if operation == execution.OperationListModels || operation == execution.OperationProbe {
+			if operation == execution.OperationListModels || operation == execution.OperationProbe ||
+				operation == execution.OperationLiveCall {
 				continue
 			}
 			mode, ok := target.Mode(clientProtocol, operation)
@@ -671,7 +700,8 @@ func appendExecutionTargets(
 				appendExecutionTarget(index, clientProtocol, operation, NoModelRouteKey, RouteTarget{
 					GroupID: group.ID, Mode: mode, ResolvedTarget: cloneResolvedTarget(target),
 				})
-			case execution.OperationResponsesPassthrough:
+			case execution.OperationResponsesPassthrough,
+				execution.OperationMistralVoices:
 				appendExecutionTarget(index, clientProtocol, operation, NoModelRouteKey, RouteTarget{
 					GroupID: group.ID, Mode: mode, ResolvedTarget: cloneResolvedTarget(target),
 				})
@@ -685,7 +715,15 @@ func appendExecutionTargets(
 				execution.OperationImagesGenerate,
 				execution.OperationImagesEdit,
 				execution.OperationEmbeddingsCreate, execution.OperationRerank,
-				execution.OperationDecisionsCreate:
+				execution.OperationDecisionsCreate,
+				execution.OperationMistralOCR,
+				execution.OperationMistralFIM,
+				execution.OperationMistralAudioTranscription,
+				execution.OperationMistralAudioSpeech,
+				execution.OperationMistralModeration,
+				execution.OperationMistralChatModeration,
+				execution.OperationMistralClassification,
+				execution.OperationMistralRealtimeTranscription:
 				for _, registration := range registrations {
 					modelMode, supported := target.ModeForModel(clientProtocol, operation, registration.upstreamID)
 					if !supported {
@@ -945,6 +983,9 @@ func validateCompileInput(input CompileInput) error {
 		accessKeyIDs[accessKey.ID] = struct{}{}
 		if accessKey.PriceMultiplier != nil && !accessKey.PriceMultiplier.Valid() {
 			return fmt.Errorf("access key %d price multiplier is invalid", accessKey.ID)
+		}
+		if accessKey.ConcurrencyLimit != nil && (*accessKey.ConcurrencyLimit < 0 || *accessKey.ConcurrencyLimit > maxJSONSafeInteger) {
+			return fmt.Errorf("access key %d has invalid concurrency limit", accessKey.ID)
 		}
 		if accessKey.RPMLimit < 0 {
 			return fmt.Errorf("access key %d rpm limit must not be negative", accessKey.ID)

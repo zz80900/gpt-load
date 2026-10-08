@@ -46,6 +46,7 @@ import AppDraftGuard from '@modern/components/AppDraftGuard.vue'
 import { createOperationKey } from '../groups/group-create-operation'
 import AccessKeyQuotaEditor from './AccessKeyQuotaEditor.vue'
 import AccessKeyQuotaResetDialog from './AccessKeyQuotaResetDialog.vue'
+import RPMTrend from '../rpm/RPMTrend.vue'
 import { accessState, accessTime } from './access-key-display'
 import {
   draftErrors,
@@ -451,6 +452,7 @@ onScopeDispose(() => {
               {{ t('accessKeys.lastUsed') }} · {{ accessTime(usageRow.last_request_at_ms, locale) }}
             </p>
           </AppFormSection>
+          <RPMTrend v-if="mode === 'detail' && base" :scope="{ kind: 'access_key', id: base.id }" />
           <AppFormSection :title="t('accessKeys.basic')" compact>
             <template #actions
               ><AppSwitch
@@ -650,6 +652,16 @@ onScopeDispose(() => {
             @reset="openReset"
           />
           <AppFormSection :title="t('accessKeys.policy')" compact>
+            <AppTextField
+              v-model="draft.concurrency"
+              :label="t('concurrency.label')"
+              :description="t('concurrency.overrideHelp')"
+              :placeholder="t('concurrency.inherit')"
+              inputmode="numeric"
+              size="sm"
+              :disabled="pending"
+              :error="fieldError('concurrency')"
+            />
             <div class="modern-access-field-pair">
               <AppTextField
                 v-model="draft.rpm"

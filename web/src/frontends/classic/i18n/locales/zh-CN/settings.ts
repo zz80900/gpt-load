@@ -69,6 +69,10 @@ export default {
       },
       routeStrategyHelp:
         '原生优先尽量保留原生能力；混合权重让原生与转换候选按有效权重竞争，转换可能存在能力差异。请求亲和仍生效，流量不保证严格按权重分配。',
+      codex_live_mode: '实时语音',
+      liveModes: { off: '关闭', direct: '直连上游', relay: '网关中继' },
+      liveModeHelp:
+        '分组可覆盖此默认值。直连要求客户端能访问上游；中继需要配置公网媒体地址及 UDP 端口。关闭仅停用语音。',
       responses_websocket_enabled: 'Responses WebSocket',
       websocketHelp:
         '分组可覆盖此开关；关闭会立即断开受影响的 WS 连接并中断生成，HTTP/SSE 不受影响。',
@@ -78,6 +82,9 @@ export default {
       retry_count: '额外重试次数',
       retryCountHelp:
         '每个请求在首次上游尝试后最多追加的重试次数；跨分组共享，切换分组不会重置；0 表示关闭重试。',
+      empty_response_retry: '空回检测',
+      emptyResponseRetryHelp:
+        '仅对流式对话请求生效。上游正常结束但没有产出任何内容时，视为一次失败并换下一个候选重试；不冷却、不拉黑凭据。重试用尽后仍把上游返回的空响应交给客户端。预热请求、会话续接请求与 WebSocket 不参与判定。',
       blacklist_threshold: '连续失败拉黑阈值',
       blacklistThresholdHelp: '凭据达到该连续失败次数后自动拉黑；0 表示关闭自动拉黑。',
       validation_interval: '检测间隔',

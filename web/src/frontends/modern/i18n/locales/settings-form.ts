@@ -39,7 +39,7 @@ export const zhCN = {
     system: '系统信息',
   },
   sectionHelp: {
-    redaction: '配置发送给上游与 JEV 的文本替换规则',
+    redaction: '配置发送给上游与 JEV 的文本脱敏规则',
     routing: '路由选择与请求亲和',
     connection: '代理、超时和失败处理',
     browser: '跨域访问与请求头规则',
@@ -48,7 +48,12 @@ export const zhCN = {
     experimental: '集中管理默认关闭且可能调整的实验性功能',
     system: '版本与部署信息',
   },
+  liveModes: { off: '关闭', direct: '直连上游', relay: '网关中继' },
   fields: {
+    global_concurrency_limit: '全局并发上限',
+    default_access_key_concurrency_limit: '访问密钥默认并发上限',
+    default_group_concurrency_limit: '分组默认并发上限',
+    codex_live_mode: '实时语音',
     request_redaction: '请求脱敏',
     jev: 'JEV 公共配置',
     request_audit: '智能护栏',
@@ -57,6 +62,7 @@ export const zhCN = {
     affinity_enabled: '请求亲和',
     affinity_ttl: '亲和有效期',
     affinity_capacity: '亲和缓存容量',
+    empty_response_retry: '空回检测',
     responses_websocket_enabled: 'Responses WebSocket',
     proxy_config: '上游代理',
     first_byte_timeout: '响应 / 流式首事件超时',
@@ -72,7 +78,13 @@ export const zhCN = {
     cors: '跨域访问（CORS）',
   },
   hints: {
-    request_redaction: '配置发送给上游与 JEV 的文本替换规则',
+    global_concurrency_limit: '限制所有访问密钥的请求总量，与密钥、分组上限同时生效。0 表示不限。',
+    default_access_key_concurrency_limit:
+      '每个访问密钥独立继承此值，跨分组合计；密钥可单独覆盖。0 表示不限。',
+    default_group_concurrency_limit: '每个分组独立继承此值；分组可单独覆盖。0 表示不限。',
+    codex_live_mode:
+      '分组可覆盖此默认值。直连要求客户端能访问上游；中继需要配置公网媒体地址及 UDP 端口。关闭仅停用语音。',
+    request_redaction: '配置发送给上游与 JEV 的文本脱敏规则',
     jev: '自动模型与语义审计共用。请求文本会发送到所选分组；语义审计需要明确指定分组。',
     request_audit: '使用 JEV 按自定义规则拦截或告警。',
     auto_model: 'Jev 选择预设，现有调度选择分组和凭据。',
@@ -82,6 +94,8 @@ export const zhCN = {
     affinity_ttl: '亲和记录的默认保留时长。',
     affinity_capacity: '最多保留的亲和记录数，范围为 1–1,000,000。',
     responses_websocket_enabled: '关闭会断开受影响的 WebSocket 连接并中断生成，HTTP/SSE 不受影响。',
+    empty_response_retry:
+      '仅流式对话生效。上游正常结束却没有任何产出时换下一个候选重试，不冷却也不拉黑凭据；预热与会话续接请求不参与判定。',
     proxy_config: '分组与账号可单独覆盖此代理。',
     first_byte_timeout: '等待原生响应或流式首个事件的最长时间。',
     request_timeout: '一次上游尝试允许的总时长。',
@@ -89,7 +103,7 @@ export const zhCN = {
     retry_count: '首次尝试后额外重试的上限，跨分组共享；0 表示不重试。',
     blacklist_threshold: '连续失败达到此值后拉黑凭据；0 表示关闭自动拉黑。',
     validation_interval: '后台重新检测凭据的时间间隔。',
-    request_log_retention_days: '后台自动清理超出保留期的日志，可设置 1–365 天。',
+    request_log_retention_days: '后台自动清理超出保留期的日志和 RPM 统计，可设置 1–365 天。',
     models_dev_auto_sync_enabled: '按计划同步 Models.dev 目录与自动价格，关闭后仍可手动同步。',
     header_rules: '发往上游之前设置或移除的请求头。',
     response_header_rules: '返回客户端之前设置或移除的响应头。',
@@ -206,7 +220,7 @@ export const enUS = {
     system: 'System information',
   },
   sectionHelp: {
-    redaction: 'Configure text replacement for upstream providers and JEV',
+    redaction: 'Configure text redaction for upstream providers and JEV',
     routing: 'Route selection and request affinity',
     connection: 'Proxy, timeouts and failure handling',
     browser: 'Cross-origin access and header rules',
@@ -215,7 +229,12 @@ export const enUS = {
     experimental: 'Manage disabled-by-default features that may change',
     system: 'Version and deployment',
   },
+  liveModes: { off: 'Off', direct: 'Direct to upstream', relay: 'Gateway relay' },
   fields: {
+    global_concurrency_limit: 'Global concurrency limit',
+    default_access_key_concurrency_limit: 'Default access key concurrency limit',
+    default_group_concurrency_limit: 'Default group concurrency limit',
+    codex_live_mode: 'Live voice',
     request_redaction: 'Request redaction',
     jev: 'Shared JEV configuration',
     request_audit: 'AI Guardrails',
@@ -224,6 +243,7 @@ export const enUS = {
     affinity_enabled: 'Request affinity',
     affinity_ttl: 'Affinity lifetime',
     affinity_capacity: 'Affinity cache capacity',
+    empty_response_retry: 'Empty response detection',
     responses_websocket_enabled: 'Responses WebSocket',
     proxy_config: 'Upstream proxy',
     first_byte_timeout: 'Response / first stream event timeout',
@@ -239,7 +259,16 @@ export const enUS = {
     cors: 'Cross-origin access (CORS)',
   },
   hints: {
-    request_redaction: 'Configure text replacement for upstream providers and JEV',
+    global_concurrency_limit:
+      'Caps total active requests across all access keys, alongside key and group limits. 0 means unlimited.',
+    default_access_key_concurrency_limit:
+      'Each access key inherits this limit independently across its groups and may override it. 0 means unlimited.',
+    default_group_concurrency_limit:
+      'Each group inherits this limit independently and may override it. 0 means unlimited.',
+
+    codex_live_mode:
+      'Groups can override this default. Direct mode requires client access to upstream media. Relay mode requires a reachable media IP and UDP ports. Off disables voice only.',
+    request_redaction: 'Configure text redaction for upstream providers and JEV',
     jev: 'Used by automatic models and semantic auditing. Request text is sent to this route; semantic auditing requires an explicit group.',
     request_audit: 'Use JEV to block or warn on custom rules.',
     route_strategy:
@@ -250,6 +279,8 @@ export const enUS = {
     affinity_capacity: 'Maximum affinity records, from 1 to 1,000,000.',
     responses_websocket_enabled:
       'Disabling disconnects affected WebSocket sessions and interrupts generation. HTTP/SSE is unaffected.',
+    empty_response_retry:
+      'Streaming chat only. When upstream finishes without producing anything, the next candidate is tried without cooling down or blacklisting the credential. Prewarm, continuation and conversation requests are exempt.',
     proxy_config: 'Groups and credentials may override this proxy.',
     first_byte_timeout: 'Maximum wait for the native response or first streaming event.',
     request_timeout: 'Total time allowed for one upstream attempt.',
@@ -258,7 +289,8 @@ export const enUS = {
     blacklist_threshold:
       'Blacklist a credential after this many consecutive failures. 0 disables automatic blacklisting.',
     validation_interval: 'Interval between background credential checks.',
-    request_log_retention_days: 'Automatically delete older logs. Allowed range: 1–365 days.',
+    request_log_retention_days:
+      'Automatically delete older logs and RPM statistics. Allowed range: 1–365 days.',
     models_dev_auto_sync_enabled:
       'Sync the Models.dev catalog and automatic prices on schedule. Manual sync remains available.',
     header_rules: 'Set or remove request headers before sending upstream.',
@@ -378,7 +410,7 @@ export const jaJP = {
     system: 'システム情報',
   },
   sectionHelp: {
-    redaction: '上流と JEV に送信するテキストの置換ルールを設定',
+    redaction: '上流と JEV に送信するテキストのマスキングルールを設定',
     routing: 'ルート選択とリクエスト親和性',
     connection: 'プロキシ、タイムアウト、失敗時の処理',
     browser: 'クロスオリジンアクセスとヘッダールール',
@@ -387,7 +419,12 @@ export const jaJP = {
     experimental: '初期状態で無効かつ変更される可能性がある機能を管理',
     system: 'バージョンと配置情報',
   },
+  liveModes: { off: '無効', direct: '上流に直接接続', relay: 'ゲートウェイ中継' },
   fields: {
+    global_concurrency_limit: '全体の同時実行数上限',
+    default_access_key_concurrency_limit: 'アクセスキーのデフォルト同時実行数上限',
+    default_group_concurrency_limit: 'グループのデフォルト同時実行数上限',
+    codex_live_mode: 'リアルタイム音声',
     request_redaction: 'リクエストのマスキング',
     jev: 'JEV 共通設定',
     request_audit: 'AI ガードレール',
@@ -396,6 +433,7 @@ export const jaJP = {
     affinity_enabled: 'リクエスト親和性',
     affinity_ttl: '親和性の有効期間',
     affinity_capacity: '親和性キャッシュ容量',
+    empty_response_retry: '空応答の検出',
     responses_websocket_enabled: 'Responses WebSocket',
     proxy_config: '上流プロキシ',
     first_byte_timeout: '応答 / ストリーム初回イベントの待機時間',
@@ -411,7 +449,16 @@ export const jaJP = {
     cors: 'クロスオリジンアクセス（CORS）',
   },
   hints: {
-    request_redaction: '上流と JEV に送信するテキストの置換ルールを設定',
+    global_concurrency_limit:
+      '全アクセスキーの実行中リクエストの合計を制限します。キー・グループ上限も同時に適用されます。0 は無制限です。',
+    default_access_key_concurrency_limit:
+      '各アクセスキーが個別に継承する上限です。グループをまたいで合計し、キーごとに上書きできます。0 は無制限です。',
+    default_group_concurrency_limit:
+      '各グループが個別に継承する上限です。グループごとに上書きできます。0 は無制限です。',
+
+    codex_live_mode:
+      'グループで既定値を上書きできます。直接接続はクライアントから上流への通信が必要です。中継には到達可能なメディア IP と UDP ポートが必要です。無効にしてもテキストは利用できます。',
+    request_redaction: '上流と JEV に送信するテキストのマスキングルールを設定',
     jev: '自動モデルと意味監査で共用します。リクエスト本文を選択したグループに送信します。意味監査にはグループの指定が必要です。',
     request_audit: 'JEV が独自ルールでブロックまたは警告します。',
     route_strategy:
@@ -422,6 +469,8 @@ export const jaJP = {
     affinity_capacity: '親和性レコードの上限。1～1,000,000 件。',
     responses_websocket_enabled:
       '無効にすると対象の WebSocket 接続を切断し生成を中断します。HTTP/SSE には影響しません。',
+    empty_response_retry:
+      'ストリーミングの対話のみ対象です。上流が何も生成せずに完了した場合は次の候補で再試行し、クールダウンやブラックリスト登録は行いません。プリウォームと継続リクエストは対象外です。',
     proxy_config: 'グループと認証情報で上書きできます。',
     first_byte_timeout: '元の応答または最初のストリームイベントを待つ上限時間。',
     request_timeout: '1 回の上流試行に許可する合計時間。',
@@ -430,7 +479,7 @@ export const jaJP = {
     blacklist_threshold:
       '連続失敗が閾値に達すると認証情報をブラックリスト化します。0 で無効になります。',
     validation_interval: 'バックグラウンドで認証情報を再確認する間隔。',
-    request_log_retention_days: '保持期間を超えたログを自動削除します。1～365 日。',
+    request_log_retention_days: '保持期間を超えたログと RPM 統計を自動削除します。1～365 日。',
     models_dev_auto_sync_enabled:
       'Models.dev のカタログと自動料金を定期同期します。無効でも手動同期できます。',
     header_rules: '上流に送信する前にヘッダーを設定または削除します。',

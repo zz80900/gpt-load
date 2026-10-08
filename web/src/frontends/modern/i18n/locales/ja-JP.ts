@@ -1,5 +1,8 @@
+import { jaJP as proxies } from '@shared/proxies/messages'
+import { jaJP as concurrency } from './concurrency'
 import { jaJP as requestRedaction } from './request-redaction'
 import { jaJP as experimental } from './experimental'
+import { jaJP as rpm } from './rpm'
 import { protocolMessages as protocols } from '../protocols'
 import { jaJP as inspector } from './inspector'
 import { jaJP as home } from './home'
@@ -21,8 +24,11 @@ import { jaJP as autoModel } from './auto-model'
 import { jaJP as subscriptions } from './subscriptions'
 
 export default {
+  proxies,
+  concurrency,
   requestRedaction,
   ...experimental,
+  rpm,
   home,
   inspector,
   protocols,
@@ -102,6 +108,7 @@ export default {
     },
   },
   pages: {
+    proxies: { title: proxies.title },
     home: { title: '概要' },
     groups: { title: 'グループ' },
     groupDetail: { title: 'グループの詳細' },

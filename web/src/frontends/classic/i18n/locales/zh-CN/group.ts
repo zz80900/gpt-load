@@ -211,10 +211,6 @@ export default {
         headers: '上游请求头规则',
         danger: '危险区域',
       },
-      routing: {
-        description: '调整分组参与请求分配的相对权重。',
-        weightHelp: '默认 50，范围 1–100；与凭据权重相乘，决定分配比例。',
-      },
       headers: {
         description: '发往上游前设置、覆盖或移除的请求头规则；覆盖后将完整替换全局规则，不做合并。',
       },
@@ -315,7 +311,9 @@ export default {
         validationModel: '测试模型（可选）',
         validationModelPlaceholder: '搜索或输入模型 ID',
         validationModelHelp: '留空时使用分组的第一个模型；这里填上游模型 ID，不是别名。',
-        weight: '分组权重',
+        priority: '优先级',
+        priorityError: '请输入 -2147483648～2147483647 的整数',
+        weight: '权重',
         auto: '自动',
         manual: '手动',
         weightError: '请输入 1–100 之间的整数',
@@ -328,6 +326,8 @@ export default {
         first_byte_timeout: '原生响应 / 流式首事件超时',
         request_timeout: '单次上游请求超时',
         stream_idle_timeout: '流空闲超时',
+        concurrency_limit: '并发上限',
+        concurrencyHelp: '0 表示不限。仅限制数据面并发，满额立即拒绝。',
         blacklist_threshold: '连续失败拉黑阈值',
         blacklistThresholdHelp: '凭据达到该连续失败次数后自动拉黑；0 表示关闭自动拉黑。',
         effective: '{value} 秒',
@@ -353,6 +353,9 @@ export default {
         headerStorageNoticeEnd: '。',
         headerReplacementWarning:
           '此分组覆盖会完整替换全局 HeaderRules；后续全局更改不会合并到这里。',
+        empty_response_retry: '空回检测',
+        emptyResponseRetryHelp:
+          '仅对流式对话请求生效。上游正常结束但没有任何产出时，视为一次失败并换下一个候选重试，不冷却也不拉黑凭据；重试用尽后仍把空响应交给客户端。预热与会话续接请求不参与判定。',
         responses_websocket_enabled: 'Responses WebSocket',
         websocketHelp: '关闭会立即断开本分组的 WS 连接并中断生成，HTTP/SSE 不受影响。',
         affinity_enabled: '请求亲和',
@@ -380,6 +383,12 @@ export default {
       settings: '设置',
     },
     credentials: {
+      name: '名称',
+      namePlaceholder: '可选，用于识别此凭据',
+      nameSaveFailed: '名称保存失败，请重试',
+      showAccount: '查看完整账号',
+      hideAccount: '隐藏完整账号',
+
       modelCooldown: {
         label: '模型冷却',
         count: '模型冷却 · {count}',
@@ -560,6 +569,8 @@ export default {
         moreActions: '更多操作',
         autoRenews: '使用时自动续期',
         resetCredits: '重置卡',
+        creditBalance: '点数',
+        creditUnlimited: '不限量',
         resetCreditsCount: '{count} 张可用',
         resetCreditsTooltipTitle: '重置卡明细',
         resetCreditsTooltipItem: '第 {index} 张：{expires}',
@@ -681,6 +692,7 @@ export default {
       },
       full: {
         actions: '全量操作',
+        import: '从文件导入',
         download: '下载全部',
         enable: '启用全部',
         disable: '停用全部',
@@ -708,6 +720,13 @@ export default {
           restore: '已恢复 {count} 个{kind}',
         },
         failed: '无法完成全量操作',
+      },
+      fileImport: {
+        description: '将文件中的 {count} 条凭据添加到当前分组，已有重复凭据会自动跳过。',
+        empty: '所选文件中没有凭据。',
+        too_large: '导入内容超过 32 MiB，请拆分后导入。',
+        too_many: '单次最多导入 5000 条凭据，请拆分后导入。',
+        read_failed: '无法读取文件，请选择 UTF-8 编码的 TXT、JSON 或 JSONL 文件。',
       },
       batch: {
         selected: '已选择 {count} 项',

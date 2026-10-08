@@ -1,3 +1,4 @@
+import type { CodexLiveMode } from '@shared/codex-live'
 import type { RedactionRule } from '@/app/resources/request-redaction'
 import {
   defaultJev,
@@ -30,6 +31,10 @@ export interface SettingsDraft {
 }
 
 const requestForwardingKeys: RuntimeSettingKey[] = [
+  'global_concurrency_limit',
+  'default_access_key_concurrency_limit',
+  'default_group_concurrency_limit',
+  'codex_live_mode',
   'responses_websocket_enabled',
   'route_strategy',
   'first_byte_timeout',
@@ -37,6 +42,7 @@ const requestForwardingKeys: RuntimeSettingKey[] = [
   'stream_idle_timeout',
   'retry_count',
   'blacklist_threshold',
+  'empty_response_retry',
   'header_rules',
   'validation_interval',
 ]
@@ -101,12 +107,16 @@ export function setSettingsOverride(
   if (next.readOnly.has(key)) return next
   if (enabled) {
     next.overrides.add(key)
-    if (key === 'route_strategy') {
+    if (key === 'codex_live_mode') {
+      next.values.codex_live_mode = base.values.codex_live_mode
+    } else if (key === 'route_strategy') {
       next.values.route_strategy = base.values.route_strategy
     } else if (key === 'affinity_enabled') {
       next.values.affinity_enabled = base.values.affinity_enabled
     } else if (key === 'responses_websocket_enabled') {
       next.values.responses_websocket_enabled = base.values.responses_websocket_enabled
+    } else if (key === 'empty_response_retry') {
+      next.values.empty_response_retry = base.values.empty_response_retry
     } else if (key === 'models_dev_auto_sync_enabled') {
       next.values.models_dev_auto_sync_enabled = base.values.models_dev_auto_sync_enabled
     } else if (key === 'cors') {
@@ -163,6 +173,7 @@ function normalizedWireValue(
   | number
   | boolean
   | RouteStrategy
+  | CodexLiveMode
   | HeaderRulesDto
   | CORSConfigDto
   | AutoModelConfigDto
@@ -205,6 +216,7 @@ function normalizedIdentityValue(
   | number
   | boolean
   | RouteStrategy
+  | CodexLiveMode
   | HeaderRulesDto
   | CORSConfigDto
   | AutoModelConfigDto
@@ -392,7 +404,13 @@ export function validateSettingsSection(draft: SettingsDraft, section: SettingsS
     'stream_idle_timeout',
     'validation_interval',
   ]
-  const policyCounts: PolicyCountSettingKey[] = ['retry_count', 'blacklist_threshold']
+  const policyCounts: PolicyCountSettingKey[] = [
+    'retry_count',
+    'blacklist_threshold',
+    'global_concurrency_limit',
+    'default_access_key_concurrency_limit',
+    'default_group_concurrency_limit',
+  ]
   return (
     timeouts.every((key) => !draft.overrides.has(key) || isValidTimeout(draft.values[key])) &&
     policyCounts.every(

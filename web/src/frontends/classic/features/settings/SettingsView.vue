@@ -209,7 +209,13 @@ const invalidKeys = computed<RuntimeSettingKey[]>(() => {
       return !isValidRetention(current.values.request_log_retention_days)
     if (key === 'affinity_capacity')
       return !isValidAffinityCapacity(current.values.affinity_capacity)
-    if (key === 'retry_count' || key === 'blacklist_threshold')
+    if (
+      key === 'retry_count' ||
+      key === 'blacklist_threshold' ||
+      key === 'global_concurrency_limit' ||
+      key === 'default_access_key_concurrency_limit' ||
+      key === 'default_group_concurrency_limit'
+    )
       return !isValidNonNegativeInteger(current.values[key])
     return false
   })
@@ -357,13 +363,21 @@ function sectionForKey(key: RuntimeSettingKey): SettingsSection {
   )
     return 'routing'
   if (
+    key === 'global_concurrency_limit' ||
+    key === 'default_access_key_concurrency_limit' ||
+    key === 'default_group_concurrency_limit' ||
     key === 'first_byte_timeout' ||
     key === 'request_timeout' ||
     key === 'stream_idle_timeout' ||
     key === 'responses_websocket_enabled'
   )
     return 'connection'
-  if (key === 'retry_count' || key === 'blacklist_threshold' || key === 'validation_interval')
+  if (
+    key === 'retry_count' ||
+    key === 'blacklist_threshold' ||
+    key === 'empty_response_retry' ||
+    key === 'validation_interval'
+  )
     return 'reliability'
   return 'data-maintenance'
 }

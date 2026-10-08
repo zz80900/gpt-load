@@ -1,3 +1,5 @@
+import { isValidGroupPriority } from '@shared/group-priority'
+
 import type {
   ChannelParamsDto,
   GroupSettingsDto,
@@ -12,9 +14,10 @@ import type {
 import { normalizePriceMultiplier } from '@/lib/price-multiplier'
 
 export type GroupTimeoutKey = 'first_byte_timeout' | 'request_timeout' | 'stream_idle_timeout'
-export type GroupPolicyCountKey = 'blacklist_threshold'
+export type GroupPolicyCountKey = 'blacklist_threshold' | 'concurrency_limit'
 
 export interface GroupSettingsDraft {
+  priority: string
   channel_id: string
   connection_type: GroupSettingsDto['connection_type']
   params: ChannelParamsDto
@@ -32,7 +35,10 @@ export const groupTimeoutKeys: readonly GroupTimeoutKey[] = [
   'request_timeout',
   'stream_idle_timeout',
 ]
-export const groupPolicyCountKeys: readonly GroupPolicyCountKey[] = ['blacklist_threshold']
+export const groupPolicyCountKeys: readonly GroupPolicyCountKey[] = [
+  'blacklist_threshold',
+  'concurrency_limit',
+]
 
 function cloneHeaders(value: HeaderRulesDto): HeaderRulesDto {
   return { set: { ...value.set }, remove: [...value.remove] }
@@ -74,9 +80,12 @@ function cloneOverrides(value: GroupRuntimeConfigDto): GroupRuntimeConfigDto {
   for (const key of groupTimeoutKeys) if (value[key] !== undefined) next[key] = value[key]
   for (const key of groupPolicyCountKeys) if (value[key] !== undefined) next[key] = value[key]
   if (value.header_rules) next.header_rules = cloneHeaders(value.header_rules)
+  if (value.codex_live_mode !== undefined) next.codex_live_mode = value.codex_live_mode
   if (value.affinity_enabled !== undefined) next.affinity_enabled = value.affinity_enabled
   if (value.responses_websocket_enabled !== undefined)
     next.responses_websocket_enabled = value.responses_websocket_enabled
+  if (value.empty_response_retry !== undefined)
+    next.empty_response_retry = value.empty_response_retry
   if (value.parameter_overrides?.length)
     next.parameter_overrides = cloneParameterOverrides(value.parameter_overrides)
   return next
@@ -139,7 +148,12 @@ function normalizeParameterValue(value: unknown): ParameterJSONValue {
 }
 
 export function createGroupSettingsDraft(group: GroupSettingsDto): GroupSettingsDraft {
-  return { ...group, params: { ...group.params }, overrides: cloneOverrides(group.overrides) }
+  return {
+    ...group,
+    priority: String(group.priority),
+    params: { ...group.params },
+    overrides: cloneOverrides(group.overrides),
+  }
 }
 
 export function setGroupConfigOverride(
@@ -189,6 +203,10 @@ export function buildGroupSettingsPatch(
   if (draft.enabled !== base.enabled) patch.enabled = draft.enabled
   const priceMultiplier = normalizePriceMultiplier(draft.price_multiplier)
   if (priceMultiplier !== base.price_multiplier) patch.price_multiplier = priceMultiplier
+  if (isValidGroupPriority(draft.priority)) {
+    const priority = Number(draft.priority)
+    if (priority !== base.priority) patch.priority = priority
+  }
   if (draft.weight_manual !== base.weight_manual) patch.weight_manual = draft.weight_manual
   if (JSON.stringify(overrides) !== JSON.stringify(normalizeOverrides(base.overrides))) {
     patch.overrides = overrides

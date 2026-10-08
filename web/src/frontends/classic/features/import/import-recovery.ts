@@ -78,9 +78,9 @@ function isChannelParams(value: unknown): value is Record<string, string> {
 }
 
 function isImportProxyDraft(value: unknown): value is ImportProxyDraft {
-  if (!isRecord(value) || !hasOnlyFields(value, ['mode', 'url'])) return false
-  if (value.mode === 'custom') return typeof value.url === 'string'
-  return (value.mode === 'inherit' || value.mode === 'direct') && value.url === ''
+  if (!isRecord(value) || !hasOnlyFields(value, ['mode', 'id'])) return false
+  if (value.mode === 'custom') return typeof value.id === 'string'
+  return (value.mode === 'inherit' || value.mode === 'direct') && value.id === ''
 }
 
 function isNewImportDraft(value: Record<string, unknown>): boolean {
@@ -215,10 +215,17 @@ function parseRecoveryRecord(raw: string): ImportRecoveryRecord | null {
       }
     }
     if (isRecord(value) && value.version === 8 && isRecord(value.draft)) {
-      value = {
-        ...value,
-        version: 9,
-        draft: { ...value.draft, models: migrateModelAliases(value.draft.models) },
+      const draft = value.draft
+      const models = migrateModelAliases(draft.models)
+      if (draft.mode === 'new' && isRecord(draft.proxy)) {
+        // 旧草稿没有代理 ID，保留其他内容并要求重新选择，不能静默改为直连。
+        value = {
+          ...value,
+          version: 9,
+          draft: { ...draft, models, proxy: { mode: draft.proxy.mode, id: '' } },
+        }
+      } else {
+        value = { ...value, version: 9, draft: { ...draft, models } }
       }
     }
     if (

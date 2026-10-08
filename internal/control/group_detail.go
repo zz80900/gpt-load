@@ -15,13 +15,16 @@ import (
 )
 
 type GroupEffectiveConfigResponse struct {
+	ConcurrencyLimit          int64               `json:"concurrency_limit"`
 	FirstByteTimeout          int64               `json:"first_byte_timeout"`
 	RequestTimeout            int64               `json:"request_timeout"`
 	StreamIdleTimeout         int64               `json:"stream_idle_timeout"`
 	HeaderRules               HeaderRulesResponse `json:"header_rules"`
 	BlacklistThreshold        int                 `json:"blacklist_threshold"`
 	AffinityEnabled           bool                `json:"affinity_enabled"`
+	CodexLiveMode             state.CodexLiveMode `json:"codex_live_mode"`
 	ResponsesWebsocketEnabled bool                `json:"responses_websocket_enabled"`
+	EmptyResponseRetry        bool                `json:"empty_response_retry"`
 }
 
 // GroupSummaryResponse contains the group fields required by the detail page header.
@@ -88,7 +91,10 @@ func effectiveGroupConfig(
 		},
 		BlacklistThreshold:        resolved.BlacklistThreshold,
 		AffinityEnabled:           resolved.AffinityEnabled,
+		CodexLiveMode:             resolved.CodexLiveMode,
 		ResponsesWebsocketEnabled: resolved.ResponsesWebsocketEnabled,
+		EmptyResponseRetry:        resolved.EmptyResponseRetry,
+		ConcurrencyLimit:          resolved.ConcurrencyLimit,
 	}, nil
 }
 

@@ -29,6 +29,7 @@ type routeInspectAccessKeyResponse struct {
 }
 
 type routeInspectCredentialResponse struct {
+	Name            string                `json:"name,omitempty"`
 	CredentialID    uint                  `json:"credential_id"`
 	Available       bool                  `json:"available"`
 	ReasonCode      *scheduler.ReasonCode `json:"reason_code"`
@@ -38,6 +39,7 @@ type routeInspectCredentialResponse struct {
 }
 
 type routeInspectGroupResponse struct {
+	Priority                  int32                            `json:"priority"`
 	GroupID                   uint                             `json:"group_id"`
 	GroupName                 string                           `json:"group_name"`
 	ChannelID                 channel.ID                       `json:"channel_id"`
@@ -74,12 +76,15 @@ func optionalReason(value scheduler.ReasonCode) *scheduler.ReasonCode {
 }
 
 func validateRouteInspectRequest(request routeInspectRequest) error {
+	if request.Protocol == protocol.CodexLive && request.ExternalModel == "" {
+		request.ExternalModel = channel.CodexLiveModelID
+	}
 	if !request.Protocol.DataPlaneEnabled() ||
 		request.AccessKeyID == 0 ||
 		!validUsageModel(request.ExternalModel) {
 		return app_errors.ErrValidation
 	}
-	_, err := dialect.InspectStandardRequest(request.Protocol, request.ExternalModel)
+	_, err := inspectRouteMetadata(request.Protocol, request.ExternalModel)
 	if err != nil {
 		return app_errors.ErrValidation
 	}
@@ -89,10 +94,13 @@ func validateRouteInspectRequest(request routeInspectRequest) error {
 func (service *Service) InspectRoute(
 	request routeInspectRequest,
 ) (routeInspectResponse, error) {
+	if request.Protocol == protocol.CodexLive && request.ExternalModel == "" {
+		request.ExternalModel = channel.CodexLiveModelID
+	}
 	if err := validateRouteInspectRequest(request); err != nil {
 		return routeInspectResponse{}, err
 	}
-	metadata, err := dialect.InspectStandardRequest(request.Protocol, request.ExternalModel)
+	metadata, err := inspectRouteMetadata(request.Protocol, request.ExternalModel)
 	if err != nil || metadata.Model == nil {
 		return routeInspectResponse{}, app_errors.ErrValidation
 	}
@@ -149,6 +157,14 @@ func (service *Service) InspectRoute(
 	)
 }
 
+func inspectRouteMetadata(clientProtocol protocol.Protocol, model string) (dialect.RequestMetadata, error) {
+	if clientProtocol == protocol.CodexLive {
+		return dialect.RequestMetadata{Model: &model, Operation: execution.OperationLiveCall,
+			RouteRequirement: execution.RouteRequirementNative}, nil
+	}
+	return dialect.InspectStandardRequest(clientProtocol, model)
+}
+
 func mapRouteInspectResponse(
 	observation runtimeObservation,
 	request routeInspectRequest,
@@ -182,6 +198,7 @@ func mapRouteInspectResponse(
 			RouteMode:                 group.RouteMode,
 			RouteRequirementSatisfied: group.RouteRequirementSatisfied,
 			UpstreamModel:             cloneRouteModel(group.UpstreamModelID),
+			Priority:                  group.Priority,
 			WeightManual:              cloneInt(group.WeightManual),
 			Included:                  group.Included,
 			Routable:                  group.Routable,
@@ -228,6 +245,13 @@ func (server *Server) handleRouteInspect(c *gin.Context) {
 	if err != nil {
 		writeServiceError(c, "inspect_route", err)
 		return
+	}
+	// 别名仅附加到管理面展示，不进入路由检查的输入或判定。
+	for groupIndex := range result.Groups {
+		for index := range result.Groups[groupIndex].Credentials {
+			credential := &result.Groups[groupIndex].Credentials[index]
+			credential.Name = server.service.credentialDisplay(&credential.CredentialID).CredentialAlias
+		}
 	}
 	response.SuccessI18n(c, "common.success", result)
 }

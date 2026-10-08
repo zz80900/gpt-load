@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/dig"
 	"gorm.io/gorm"
 
@@ -33,6 +34,7 @@ import (
 	"gpt-load/internal/ratelimit"
 	"gpt-load/internal/releasecheck"
 	"gpt-load/internal/requestlog"
+	"gpt-load/internal/rpm"
 	"gpt-load/internal/state"
 	stateloader "gpt-load/internal/state/loader"
 	"gpt-load/internal/storage"
@@ -41,8 +43,6 @@ import (
 	subscriptionruntime "gpt-load/internal/subscription/runtime"
 	"gpt-load/internal/telemetry"
 	"gpt-load/internal/webui"
-
-	"github.com/sirupsen/logrus"
 )
 
 // BuildContainer creates the 2.0 runtime foundation dependency graph.
@@ -73,7 +73,13 @@ func BuildContainer() (*dig.Container, error) {
 		func(bootstrap *control.CatalogBootstrap) *catalog.Runtime { return bootstrap.Runtime },
 		health.NewStatsStore,
 		health.NewMutationCoordinator,
-		ratelimit.NewAccessKeyRPM,
+		rpm.NewStore,
+		func(store *rpm.Store) *ratelimit.AccessKeyRPM {
+			limiter := ratelimit.NewAccessKeyRPM()
+			limiter.SetRPMStore(store)
+			return limiter
+		},
+		func(handler *gateway.Handler) app.LiveSessionRuntime { return handler },
 		func(limiter *ratelimit.AccessKeyRPM) gateway.AccessKeyRPMLimiter {
 			return limiter
 		},
@@ -89,9 +95,11 @@ func BuildContainer() (*dig.Container, error) {
 			retention requestlog.RetentionPolicyProvider,
 			quotaRuntime *accessquota.Runtime,
 			subscriptionCredentials *subscription.CredentialManager,
+			rpmStore *rpm.Store,
 		) *requestlog.Service {
 			service := requestlog.NewService(db, redactor, retention, quotaRuntime)
 			service.SetPassiveQuotaFlusher(subscriptionCredentials)
+			service.SetRPMStore(rpmStore)
 			return service
 		},
 		func(service *requestlog.Service) telemetry.RequestLogSink {
@@ -162,6 +170,8 @@ func BuildContainer() (*dig.Container, error) {
 		dialect.NewDecisions,
 		dialect.NewAnthropic,
 		dialect.NewGemini,
+		dialect.NewGeminiEmbeddings,
+		dialect.NewMistral,
 		func(
 			openAI *dialect.OpenAI,
 			openAIResponses *dialect.OpenAIResponses,
@@ -171,8 +181,12 @@ func BuildContainer() (*dig.Container, error) {
 			decisions *dialect.Decisions,
 			anthropic *dialect.Anthropic,
 			gemini *dialect.Gemini,
+			geminiEmbeddings *dialect.GeminiEmbeddings,
+			mistral *dialect.Mistral,
 		) dialect.Set {
-			return dialect.NewSet(openAI, openAIResponses, openAIImages, openAIEmbeddings, rerank, decisions, anthropic, gemini)
+			return dialect.NewSet(
+				openAI, openAIResponses, openAIImages, openAIEmbeddings, rerank, decisions, anthropic, gemini, geminiEmbeddings, mistral,
+			)
 		},
 		func(registry *channel.Registry) (*bifrostexecutor.RuntimeManager, error) {
 			return bifrostexecutor.NewManagedRuntime(registry)
@@ -191,7 +205,11 @@ func BuildContainer() (*dig.Container, error) {
 		newProviderAdapterRegistry,
 		func(registry *provideradapter.Registry) execution.Executor { return registry },
 		func(runtime *bifrostexecutor.RuntimeManager) app.ExecutionRuntime { return runtime },
-		gateway.NewExecutionForwarder,
+		func(executor execution.Executor, store *rpm.Store) *gateway.ExecutionForwarder {
+			forwarder := gateway.NewExecutionForwarder(executor)
+			forwarder.SetRPMStore(store)
+			return forwarder
+		},
 		func(forwarder *gateway.ExecutionForwarder) gateway.AttemptForwarder { return forwarder },
 		gateway.NewHandlerWithLifecycle,
 		control.NewService,
@@ -232,6 +250,16 @@ func BuildContainer() (*dig.Container, error) {
 		if err := dependencyContainer.Provide(provider); err != nil {
 			return nil, err
 		}
+	}
+	if err := dependencyContainer.Decorate(func(
+		handler *gateway.Handler,
+		adapter *cpaexecutor.Adapter,
+		cfg *config.Config,
+	) *gateway.Handler {
+		handler.ConfigureCodexLive(adapter, cfg.CodexLive)
+		return handler
+	}); err != nil {
+		return nil, err
 	}
 	if err := dependencyContainer.Invoke(func(
 		engine *gin.Engine,
@@ -284,6 +312,7 @@ func newProviderAdapterRegistry(
 		{ProviderKind: channel.ProviderGemini, Adapter: bifrost},
 		{ProviderKind: channel.ProviderMultiProtocolGateway, Adapter: bifrost},
 		{ProviderKind: channel.ProviderOpenAICompatible, Adapter: bifrost},
+		{ProviderKind: channel.ProviderCline, Adapter: bifrost},
 		{ProviderKind: channel.ProviderAzureOpenAI, Adapter: bifrost},
 		{ProviderKind: channel.ProviderAWSBedrock, Adapter: bifrost},
 		{ProviderKind: channel.ProviderGoogleVertex, Adapter: bifrost},

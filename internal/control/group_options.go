@@ -140,6 +140,9 @@ func mapGroupOptions(rows []groupOptionRow, registries ...*channel.Registry) ([]
 		// 匹配不上的筛选值（访问密钥白名单复用同一份候选）。
 		seenNames := make(map[string]struct{}, len(models))
 		for _, model := range models {
+			if isBuiltInCodexLiveModel(row.ChannelID, model.ID) {
+				continue
+			}
 			names := state.ConcreteModelNames(state.ModelConfig{ID: model.ID, Aliases: model.Aliases})
 			for _, name := range names {
 				if _, duplicate := seenNames[name]; duplicate {

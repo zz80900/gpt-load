@@ -46,7 +46,7 @@ const props = defineProps<{
   groupNames?: Record<number, string>
   channels?: Record<string, ChannelDto>
 }>()
-defineEmits<{ 'update:open': [open: boolean] }>()
+defineEmits<{ 'update:open': [open: boolean]; 'filter-ip': [ip: string] }>()
 const client = useApiClient()
 const { locale, t, te } = useI18n()
 const query = useQuery(requestLogDetailQueryOptions(client, () => props.requestId))
@@ -457,6 +457,28 @@ function toggleAttemptErrorMessage(sequence: number): void {
         <h3>{{ t('monitor.logs.drawer.summary') }}</h3>
         <dl class="log-detail__grid">
           <div>
+            <dt>{{ t('monitor.logs.columns.clientIP') }}</dt>
+            <dd>
+              <template v-if="log.client_ip">
+                <AppButton
+                  variant="link"
+                  size="inline"
+                  :aria-label="t('monitor.logs.filterIP', { value: log.client_ip })"
+                  @click="$emit('filter-ip', log.client_ip)"
+                >
+                  {{ log.client_ip }}
+                </AppButton>
+                <CopyButton
+                  :value="log.client_ip"
+                  :label="t('monitor.logs.copyIP')"
+                  :success-label="t('common.copied')"
+                  :failure-label="t('common.copyFailed')"
+                />
+              </template>
+              <span v-else>—</span>
+            </dd>
+          </div>
+          <div>
             <dt>{{ t('monitor.logs.drawer.status') }}</dt>
             <dd>
               {{ t(`monitor.logs.status.${log.status}`)
@@ -470,7 +492,11 @@ function toggleAttemptErrorMessage(sequence: number): void {
           <div v-if="log.stream">
             <dt>{{ t('monitor.logs.drawer.firstResponse') }}</dt>
             <dd>
-              {{ log.first_response_ms === null ? '—' : formatLogDuration(log.first_response_ms) }}
+              {{
+                log.first_response_ms === null || log.first_response_ms <= 0
+                  ? '—'
+                  : formatLogDuration(log.first_response_ms)
+              }}
             </dd>
           </div>
           <div>
@@ -556,14 +582,18 @@ function toggleAttemptErrorMessage(sequence: number): void {
       </section>
 
       <section
-        v-if="log.request_audit && log.request_audit.status !== 'passed'"
+        v-if="
+          log.request_audit && (log.request_audit.outcome !== 'allowed' || log.request_audit.reason)
+        "
         class="log-detail__section"
       >
         <h3>{{ t('requestAudit.title') }}</h3>
         <dl class="log-detail__grid">
-          <div>
+          <div v-if="log.request_audit.outcome !== 'allowed'">
             <dt>{{ t('requestAudit.result') }}</dt>
-            <dd>{{ t('requestAudit.statuses.' + log.request_audit.status) }}</dd>
+            <dd>
+              {{ t('requestAudit.statuses.' + log.request_audit.outcome) }}
+            </dd>
           </div>
           <div v-if="log.request_audit.reason">
             <dt>{{ t('autoModel.reason') }}</dt>
@@ -670,7 +700,7 @@ function toggleAttemptErrorMessage(sequence: number): void {
                 appearance="plain"
               />
               <CopyChip
-                v-if="open && log.credential_name"
+                v-if="open && log.credential_name && revealsCredential"
                 :key="`${requestId}:${log.group_id}:${log.credential_id}`"
                 layout="icon"
                 :value="log.credential_name"

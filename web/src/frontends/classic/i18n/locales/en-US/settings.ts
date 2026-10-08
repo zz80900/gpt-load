@@ -78,6 +78,10 @@ export default {
       },
       routeStrategyHelp:
         'Native first favors native capabilities. Weighted mix lets native and converted candidates compete by effective weight; conversion may differ in capabilities. Request affinity still applies, so traffic shares are not guaranteed.',
+      codex_live_mode: 'Live voice',
+      liveModes: { off: 'Off', direct: 'Direct to upstream', relay: 'Gateway relay' },
+      liveModeHelp:
+        'Groups can override this default. Direct mode requires client access to upstream media. Relay mode requires a reachable media IP and UDP ports. Off disables voice only.',
       responses_websocket_enabled: 'Responses WebSocket',
       websocketHelp:
         'Groups can override this setting. Disabling closes affected WS connections and interrupts generation immediately; HTTP/SSE remains available.',
@@ -87,6 +91,9 @@ export default {
       retry_count: 'Extra retry count',
       retryCountHelp:
         'Maximum extra retries per request after the initial upstream attempt. The budget is shared across groups and does not reset when switching groups; 0 disables retries.',
+      empty_response_retry: 'Empty response detection',
+      emptyResponseRetryHelp:
+        'Applies to streaming chat requests only. When upstream finishes normally without producing any content, the attempt counts as a failure and the next candidate is tried; the credential is neither cooled down nor blacklisted. Once retries are exhausted the upstream empty response is still delivered. Prewarm requests, continuation or conversation requests and WebSocket are exempt.',
       blacklist_threshold: 'Consecutive-failure blacklist threshold',
       blacklistThresholdHelp:
         'A credential is blacklisted after this many consecutive failures; 0 disables automatic blacklisting.',

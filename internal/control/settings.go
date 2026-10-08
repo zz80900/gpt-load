@@ -25,6 +25,7 @@ import (
 	"gpt-load/internal/requestaudit"
 	"gpt-load/internal/requestredact"
 	"gpt-load/internal/state"
+	stateloader "gpt-load/internal/state/loader"
 	"gpt-load/internal/storage/models"
 )
 
@@ -44,27 +45,32 @@ type CORSConfigResponse struct {
 }
 
 type SettingsValuesResponse struct {
-	RequestRedaction          []requestredact.Rule  `json:"request_redaction"`
-	Jev                       jev.Config            `json:"jev"`
-	RequestAudit              requestaudit.Config   `json:"request_audit"`
-	AutoModel                 AutoModelSettingsView `json:"auto_model"`
-	FirstByteTimeout          int64                 `json:"first_byte_timeout"`
-	RequestTimeout            int64                 `json:"request_timeout"`
-	StreamIdleTimeout         int64                 `json:"stream_idle_timeout"`
-	HeaderRules               HeaderRulesResponse   `json:"header_rules"`
-	CORS                      CORSConfigResponse    `json:"cors"`
-	ResponseHeaderRules       HeaderRulesResponse   `json:"response_header_rules"`
-	RetryCount                int                   `json:"retry_count"`
-	RouteStrategy             state.RouteStrategy   `json:"route_strategy"`
-	BlacklistThreshold        int                   `json:"blacklist_threshold"`
-	AffinityEnabled           bool                  `json:"affinity_enabled"`
-	ResponsesWebsocketEnabled bool                  `json:"responses_websocket_enabled"`
-	AffinityTTL               int64                 `json:"affinity_ttl"`
-	AffinityCapacity          int                   `json:"affinity_capacity"`
-	ValidationInterval        int64                 `json:"validation_interval"`
-	RequestLogRetentionDays   int                   `json:"request_log_retention_days"`
-	ModelsDevAutoSyncEnabled  bool                  `json:"models_dev_auto_sync_enabled"`
-	ProxyConfig               outboundproxy.View    `json:"proxy_config"`
+	GlobalConcurrencyLimit           int64                 `json:"global_concurrency_limit"`
+	DefaultAccessKeyConcurrencyLimit int64                 `json:"default_access_key_concurrency_limit"`
+	DefaultGroupConcurrencyLimit     int64                 `json:"default_group_concurrency_limit"`
+	RequestRedaction                 []requestredact.Rule  `json:"request_redaction"`
+	Jev                              jev.Config            `json:"jev"`
+	RequestAudit                     requestaudit.Config   `json:"request_audit"`
+	AutoModel                        AutoModelSettingsView `json:"auto_model"`
+	FirstByteTimeout                 int64                 `json:"first_byte_timeout"`
+	RequestTimeout                   int64                 `json:"request_timeout"`
+	StreamIdleTimeout                int64                 `json:"stream_idle_timeout"`
+	HeaderRules                      HeaderRulesResponse   `json:"header_rules"`
+	CORS                             CORSConfigResponse    `json:"cors"`
+	ResponseHeaderRules              HeaderRulesResponse   `json:"response_header_rules"`
+	RetryCount                       int                   `json:"retry_count"`
+	RouteStrategy                    state.RouteStrategy   `json:"route_strategy"`
+	BlacklistThreshold               int                   `json:"blacklist_threshold"`
+	AffinityEnabled                  bool                  `json:"affinity_enabled"`
+	CodexLiveMode                    state.CodexLiveMode   `json:"codex_live_mode"`
+	ResponsesWebsocketEnabled        bool                  `json:"responses_websocket_enabled"`
+	EmptyResponseRetry               bool                  `json:"empty_response_retry"`
+	AffinityTTL                      int64                 `json:"affinity_ttl"`
+	AffinityCapacity                 int                   `json:"affinity_capacity"`
+	ValidationInterval               int64                 `json:"validation_interval"`
+	RequestLogRetentionDays          int                   `json:"request_log_retention_days"`
+	ModelsDevAutoSyncEnabled         bool                  `json:"models_dev_auto_sync_enabled"`
+	ProxyConfig                      outboundproxy.View    `json:"proxy_config"`
 }
 
 type DecisionRouteOption struct {
@@ -151,12 +157,17 @@ func (s *Service) getSettingsWithSnapshot(
 		Find(&rows).Error; err != nil {
 		return SettingsResponse{}, app_errors.ParseDBError(err)
 	}
+	catalog, err := stateloader.LoadProxyCatalog(ctx, db, s.encryption)
+	if err != nil {
+		return SettingsResponse{}, app_errors.ErrInternalServer
+	}
 	return mapSettingsResponse(
 		snapshot,
 		rows,
 		s.modelsDevAutoSyncOverride,
 		s.encryption,
 		s.environmentProxy,
+		catalog,
 	)
 }
 
@@ -175,6 +186,15 @@ func (s *Service) UpdateSettings(
 	previousAutoSyncEnabled := false
 	snapshot, err := s.writeConfig(ctx, func(tx *gorm.DB) error {
 		previousAutoSyncEnabled = s.modelsDevAutoSyncEnabled()
+		for index := range updates {
+			if updates[index].key == outboundproxy.SystemSettingKey {
+				value, err := s.managedProxyOverride(ctx, tx, updates[index].value)
+				if err != nil {
+					return err
+				}
+				updates[index].value = value
+			}
+		}
 		if raw, exists := request.Settings[automodel.SettingKey]; exists {
 			update, err := s.normalizeAutoModelUpdate(tx, raw)
 			if err != nil {
@@ -365,6 +385,7 @@ func mapSettingsResponse(
 	modelsDevAutoSyncOverride *bool,
 	encryptionService encryption.Service,
 	environmentProxy *outboundproxy.Config,
+	catalogs ...stateloader.ProxyCatalog,
 ) (SettingsResponse, error) {
 	settings := snapshot.Settings
 	set := make(map[string]string, len(settings.HeaderRules.Set))
@@ -399,7 +420,11 @@ func mapSettingsResponse(
 			configuredProxy = &config
 		}
 	}
-	effectiveProxy, err := outboundproxy.Resolve(nil, nil, configuredProxy, environmentProxy)
+	catalog := stateloader.ProxyCatalog{}
+	if len(catalogs) > 0 {
+		catalog = catalogs[0]
+	}
+	effectiveProxy, err := outboundproxy.Resolve(nil, nil, catalog.Resolve(configuredProxy), environmentProxy)
 	if err != nil {
 		return SettingsResponse{}, app_errors.ErrInternalServer
 	}
@@ -407,6 +432,7 @@ func mapSettingsResponse(
 	if err != nil {
 		return SettingsResponse{}, app_errors.ErrInternalServer
 	}
+	proxyView = catalog.Annotate(proxyView, configuredProxy)
 	readOnly := make([]string, 0)
 	modelsDevAutoSyncEnabled := settings.ModelsDevAutoSyncEnabled
 	if modelsDevAutoSyncOverride != nil {
@@ -443,17 +469,22 @@ func mapSettingsResponse(
 				Set:    responseSet,
 				Remove: responseRemove,
 			},
-			RetryCount:                settings.RetryCount,
-			RouteStrategy:             settings.RouteStrategy,
-			BlacklistThreshold:        settings.BlacklistThreshold,
-			AffinityEnabled:           settings.AffinityEnabled,
-			ResponsesWebsocketEnabled: settings.ResponsesWebsocketEnabled,
-			AffinityTTL:               durationSeconds(settings.AffinityTTL),
-			AffinityCapacity:          settings.AffinityCapacity,
-			ValidationInterval:        durationSeconds(settings.ValidationInterval),
-			RequestLogRetentionDays:   settings.RequestLogRetentionDays,
-			ModelsDevAutoSyncEnabled:  modelsDevAutoSyncEnabled,
-			ProxyConfig:               proxyView,
+			RetryCount:                       settings.RetryCount,
+			RouteStrategy:                    settings.RouteStrategy,
+			BlacklistThreshold:               settings.BlacklistThreshold,
+			AffinityEnabled:                  settings.AffinityEnabled,
+			CodexLiveMode:                    settings.CodexLiveMode,
+			ResponsesWebsocketEnabled:        settings.ResponsesWebsocketEnabled,
+			EmptyResponseRetry:               settings.EmptyResponseRetry,
+			GlobalConcurrencyLimit:           settings.GlobalConcurrencyLimit,
+			DefaultAccessKeyConcurrencyLimit: settings.DefaultAccessKeyConcurrencyLimit,
+			DefaultGroupConcurrencyLimit:     settings.DefaultGroupConcurrencyLimit,
+			AffinityTTL:                      durationSeconds(settings.AffinityTTL),
+			AffinityCapacity:                 settings.AffinityCapacity,
+			ValidationInterval:               durationSeconds(settings.ValidationInterval),
+			RequestLogRetentionDays:          settings.RequestLogRetentionDays,
+			ModelsDevAutoSyncEnabled:         modelsDevAutoSyncEnabled,
+			ProxyConfig:                      proxyView,
 		},
 		Overrides: overrides,
 		ReadOnly:  readOnly,
