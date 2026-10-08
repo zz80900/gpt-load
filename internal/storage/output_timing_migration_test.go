@@ -29,11 +29,11 @@ func testOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 			if db.Dialector.Name() == "sqlite" {
 				t.Parallel()
 			}
-			if len(migrations) < 26 {
+			if len(migrations) < 25 {
 				t.Fatal("output timing migration is missing")
 			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:25]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:24]); err != nil {
 					t.Fatal(err)
 				}
 				if err := db.Table("request_logs").Create(map[string]any{
@@ -43,7 +43,7 @@ func testOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 				}
 			}
 			if scenario == "interrupted_first_column" || scenario == "interrupted_complete" {
-				entry := migrations[25]
+				entry := migrations[24]
 				up := entry.Up
 				entry.Up = func(tx *gorm.DB) error {
 					if scenario == "interrupted_first_column" {
@@ -55,12 +55,12 @@ func testOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 					}
 					return fmt.Errorf("interrupt output timing DDL")
 				}
-				registry := append(append([]migration(nil), migrations[:25]...), entry)
+				registry := append(append([]migration(nil), migrations[:24]...), entry)
 				if err := applyMigrationRegistry(db, registry); err == nil {
 					t.Fatal("expected migration interruption")
 				}
 			}
-			if err := applyMigrationRegistry(db, migrations[:26]); err != nil {
+			if err := applyMigrationRegistry(db, migrations[:25]); err != nil {
 				t.Fatal(err)
 			}
 			for _, name := range []string{"first_output_ms", "last_output_ms"} {
@@ -88,7 +88,7 @@ func testOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 					}
 				}
 			}
-			if err := applyMigrationRegistry(db, migrations[:26]); err != nil {
+			if err := applyMigrationRegistry(db, migrations[:25]); err != nil {
 				t.Fatal(err)
 			}
 			// 同时覆盖在旧迁移中断后直接升级到当前版本。

@@ -29,14 +29,14 @@ func testRequestAuditMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 				t.Parallel()
 			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:22]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:21]); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if strings.HasPrefix(scenario, "interrupted") {
 				registry := append([]migration(nil), migrations...)
-				up := registry[22].Up
-				registry[22].Up = func(tx *gorm.DB) error {
+				up := registry[21].Up
+				registry[21].Up = func(tx *gorm.DB) error {
 					if scenario == "interrupted_column" {
 						if err := tx.Exec("ALTER TABLE request_logs ADD COLUMN request_audit JSON").Error; err != nil {
 							return err

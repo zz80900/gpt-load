@@ -31,6 +31,11 @@ var legacyMigrationIDs = map[string]string{
 	"0016_group_usage_index":           migrationfiles.ID0015,
 	"0017_credential_quota_history":    migrationfiles.ID0016,
 	"0018_request_log_operation_index": migrationfiles.ID0017,
+	// v2.0.0-zz.17 用一个锚定在 0020 的私有迁移建了分组自动同步开关列。那个位置
+	// 插在已发布的上游 0021 之前，会让既有账本不再是注册表前缀、实例起不来，因此
+	// 改为锚定当前上游 tip 的 0029_zz_*。只有 zz.17 在空库上跑起来过的实例会留下
+	// 旧 ID，重写后其账本恰好等于新注册表。
+	"0020_zz_group_model_auto_sync": migrationfiles.ID0029ZZ,
 }
 
 // normalizeLegacyMigrationLedger rewrites legacy ledger IDs into their canonical

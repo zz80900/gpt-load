@@ -7,38 +7,38 @@ import (
 	"gorm.io/gorm"
 )
 
-const ID0020ZZ = "0020_zz_group_model_auto_sync"
+const ID0029ZZ = "0029_zz_group_model_auto_sync"
 
-type groupAutoSyncModels0020ZZ struct {
+type groupAutoSyncModels0029ZZ struct {
 	AutoSyncModels bool `gorm:"column:auto_sync_models;not null;default:false"`
 }
 
-func (groupAutoSyncModels0020ZZ) TableName() string { return "groups" }
+func (groupAutoSyncModels0029ZZ) TableName() string { return "groups" }
 
-// Up0020ZZ adds the per-group model auto-sync switch. Existing rows stay off.
-func Up0020ZZ(db *gorm.DB) error {
-	model := &groupAutoSyncModels0020ZZ{}
+// Up0029ZZ adds the per-group model auto-sync switch. Existing rows stay off.
+func Up0029ZZ(db *gorm.DB) error {
+	model := &groupAutoSyncModels0029ZZ{}
 	if !db.Migrator().HasColumn(model, "auto_sync_models") {
 		if err := db.Migrator().AddColumn(model, "AutoSyncModels"); err != nil {
 			return fmt.Errorf("add groups.auto_sync_models: %w", err)
 		}
 	}
-	return Validate0020ZZ(db)
+	return Validate0029ZZ(db)
 }
 
-func ValidateRecoverable0020ZZ(db *gorm.DB) error {
-	model := &groupAutoSyncModels0020ZZ{}
+func ValidateRecoverable0029ZZ(db *gorm.DB) error {
+	model := &groupAutoSyncModels0029ZZ{}
 	if !db.Migrator().HasTable(model) {
 		return fmt.Errorf("validate recoverable group model auto sync: table %q is missing", "groups")
 	}
 	if db.Migrator().HasColumn(model, "auto_sync_models") {
-		return Validate0020ZZ(db)
+		return Validate0029ZZ(db)
 	}
 	return nil
 }
 
-func Validate0020ZZ(db *gorm.DB) error {
-	model := &groupAutoSyncModels0020ZZ{}
+func Validate0029ZZ(db *gorm.DB) error {
+	model := &groupAutoSyncModels0029ZZ{}
 	if !db.Migrator().HasColumn(model, "auto_sync_models") {
 		return fmt.Errorf("validate group model auto sync: column %q.auto_sync_models is missing", "groups")
 	}

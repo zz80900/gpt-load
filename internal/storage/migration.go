@@ -116,8 +116,6 @@ var migrations = []migration{
 	{ID: migrationfiles.ID0018, Up: migrationfiles.Up0018, Validate: migrationfiles.Validate0018, ValidateRecoverable: migrationfiles.ValidateRecoverable0018},
 	{ID: migrationfiles.ID0019, Up: migrationfiles.Up0019, Validate: migrationfiles.Validate0019, ValidateRecoverable: migrationfiles.ValidateRecoverable0019},
 	{ID: migrationfiles.ID0020, Up: migrationfiles.Up0020, Validate: migrationfiles.Validate0020, ValidateRecoverable: migrationfiles.ValidateRecoverable0020},
-	// Fork-owned, anchored to the current upstream tip. See migrations/doc.go.
-	{ID: migrationfiles.ID0020ZZ, Up: migrationfiles.Up0020ZZ, Validate: migrationfiles.Validate0020ZZ, ValidateRecoverable: migrationfiles.ValidateRecoverable0020ZZ},
 	{ID: migrationfiles.ID0021, Up: migrationfiles.Up0021, Validate: migrationfiles.Validate0021, ValidateRecoverable: migrationfiles.ValidateRecoverable0021},
 	{ID: migrationfiles.ID0022, Up: migrationfiles.Up0022, Validate: migrationfiles.Validate0022, ValidateRecoverable: migrationfiles.ValidateRecoverable0022},
 	{ID: migrationfiles.ID0023, Up: migrationfiles.Up0023, Validate: migrationfiles.Validate0023, ValidateRecoverable: migrationfiles.ValidateRecoverable0023},
@@ -127,6 +125,9 @@ var migrations = []migration{
 	{ID: migrationfiles.ID0027, Up: migrationfiles.Up0027, Validate: migrationfiles.Validate0027, ValidateRecoverable: migrationfiles.ValidateRecoverable0027},
 	{ID: migrationfiles.ID0028, Up: migrationfiles.Up0028, Validate: migrationfiles.Validate0028, ValidateRecoverable: migrationfiles.ValidateRecoverable0028},
 	{ID: migrationfiles.ID0029, Up: migrationfiles.Up0029, Validate: migrationfiles.Validate0029, ValidateRecoverable: migrationfiles.ValidateRecoverable0029},
+	// Fork-owned, anchored to the current upstream tip so that an already applied
+	// upstream ledger stays a prefix of this registry. See migrations/doc.go.
+	{ID: migrationfiles.ID0029ZZ, Up: migrationfiles.Up0029ZZ, Validate: migrationfiles.Validate0029ZZ, ValidateRecoverable: migrationfiles.ValidateRecoverable0029ZZ},
 }
 
 func applyMigrations(db *gorm.DB) error {

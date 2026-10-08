@@ -5,7 +5,7 @@ import "testing"
 func TestRPMMigrationCreatesHistoryAndKeepsExistingSchema(t *testing.T) {
 	t.Parallel()
 	db := openInternalMigrationTestDatabase(t)
-	if err := applyMigrationRegistry(db, migrations[:23]); err != nil {
+	if err := applyMigrationRegistry(db, migrations[:22]); err != nil {
 		t.Fatal(err)
 	}
 	if err := applyMigrations(db); err != nil {

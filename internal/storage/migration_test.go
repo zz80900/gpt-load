@@ -33,7 +33,6 @@ func TestMigrationRegistryContainsOrderedMigrations(t *testing.T) {
 		migrationfiles.ID0018,
 		migrationfiles.ID0019,
 		migrationfiles.ID0020,
-		migrationfiles.ID0020ZZ,
 		migrationfiles.ID0021,
 		migrationfiles.ID0022,
 		migrationfiles.ID0023,
@@ -43,6 +42,7 @@ func TestMigrationRegistryContainsOrderedMigrations(t *testing.T) {
 		migrationfiles.ID0027,
 		migrationfiles.ID0028,
 		migrationfiles.ID0029,
+		migrationfiles.ID0029ZZ,
 	}
 	if len(migrations) != len(wantIDs) {
 		t.Fatalf("migration registry length = %d, want %d", len(migrations), len(wantIDs))
@@ -142,4 +142,75 @@ func testMigrationRegistry() ([]migration, *[]string) {
 		}
 	}
 	return []migration{entry("0001_test"), entry("0002_test")}, &calls
+}
+
+// publishedLedgerWithoutForkTail 是已发布镜像 v2.0.0-zz.16 写下的账本 ID 序列：
+// 上游 0001..0021 加上当时的私有迁移 0014_zz_anthropic_betas，不含任何尾部私有迁移。
+//
+// 必须按 ID 逐条挑，不能写成「当前注册表的前 N 项」——后者永远等于注册表自己的前缀，
+// 因此测不出「私有迁移被插在上游迁移中游」这类错误。
+var publishedLedgerWithoutForkTail = []string{
+	"0001_initial", "0002_access_key_cost_limits", "0003_remove_observation_fresh_until",
+	"0004_usage_stats_group_activity_index", "0005_proxy_config", "0006_error_decision",
+	"0007_access_key_lifecycle", "0008_remove_inject_usage_options", "0009_price_multipliers",
+	"0010_model_cooldown", "0011_custom_access_keys", "0012_access_key_mask_prefix",
+	"0013_validation_protocol", "0014_affinity_kind", "0014_zz_anthropic_betas",
+	"0015_group_usage_index", "0016_credential_quota_history", "0017_request_log_operation_index",
+	"0018_auto_model", "0019_auto_decision_attribution", "0020_client_model_overrides",
+	"0021_request_audit",
+}
+
+func migrationByID(id string) (migration, bool) {
+	for _, entry := range migrations {
+		if entry.ID == id {
+			return entry, true
+		}
+	}
+	return migration{}, false
+}
+
+// TestMigrationUpgradesPublishedLedger 覆盖真实升级路径：已发布镜像留下的账本 + 新注册表。
+//
+// 2026-10-08 v2.0.0-zz.17 事故的回归测试：当时私有迁移锚定在 0020、被插到已发布的
+// 0021_request_audit 之前，既有实例的账本不再是注册表前缀，启动直接失败
+// （schema_migrations contains unknown or non-contiguous migration "0021_request_audit"）。
+// 私有迁移只能锚定「当前上游末尾编号」（见 migrations/doc.go）。
+func TestMigrationUpgradesPublishedLedger(t *testing.T) {
+	t.Parallel()
+	entries := make([]migration, 0, len(publishedLedgerWithoutForkTail))
+	for _, id := range publishedLedgerWithoutForkTail {
+		entry, ok := migrationByID(id)
+		if !ok {
+			t.Fatalf("published ledger ID %q is missing from the registry", id)
+		}
+		entries = append(entries, entry)
+	}
+	db := openInternalMigrationTestDatabase(t)
+	if err := applyMigrationRegistry(db, entries); err != nil {
+		t.Fatalf("apply published ledger: %v", err)
+	}
+	if err := AutoMigrate(db); err != nil {
+		t.Fatalf("upgrade published ledger: %v", err)
+	}
+	assertLedgerMatchesRegistry(t, db)
+}
+
+// TestMigrationRewritesZz17ForkLedgerID 覆盖另一种真实残留：只有在空库上跑起来过的
+// v2.0.0-zz.17 实例才会写下旧的私有迁移 ID，重写后其账本恰好等于新注册表。
+func TestMigrationRewritesZz17ForkLedgerID(t *testing.T) {
+	t.Parallel()
+	db := openInternalMigrationTestDatabase(t)
+	if err := applyMigrationRegistry(db, migrations); err != nil {
+		t.Fatalf("apply registry: %v", err)
+	}
+	if err := db.Exec(
+		"UPDATE "+migrationLedgerTable+" SET id = ? WHERE id = ?",
+		"0020_zz_group_model_auto_sync", migrationfiles.ID0029ZZ,
+	).Error; err != nil {
+		t.Fatalf("seed v2.0.0-zz.17 ledger ID: %v", err)
+	}
+	if err := AutoMigrate(db); err != nil {
+		t.Fatalf("upgrade v2.0.0-zz.17 ledger: %v", err)
+	}
+	assertLedgerMatchesRegistry(t, db)
 }
