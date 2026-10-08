@@ -12,6 +12,8 @@ import { readGroupBasics, type GroupBasics } from './groups'
 export const groupSettingsKey = (id: number) => ['modern', 'group-settings', id] as const
 export const groupModelsKey = (id: number) => ['modern', 'group-models', id] as const
 export const groupCredentialsKey = (id: number) => ['modern', 'group-credentials', id] as const
+export const groupModelAutoSyncKey = (id: number) =>
+  ['modern', 'group-model-auto-sync', id] as const
 export const credentialStates = ['available', 'cooldown', 'blacklisted', 'disabled'] as const
 export type CredentialState = (typeof credentialStates)[number]
 export const credentialSorts = [
@@ -246,6 +248,30 @@ export async function discoverGroupModels(client: ApiClient, id: number, signal:
     await client.request(`/api/groups/${id}/models/discover`, { method: 'POST', signal }),
   )
   return readModelCandidates(data.models)
+}
+
+/** 分组模型自动同步开关。请求与响应都只有 enabled 一个布尔键，走 modern 专属端点。 */
+function readModelAutoSync(value: unknown): boolean {
+  return boolean(record(value).enabled)
+}
+export async function getGroupModelAutoSync(client: ApiClient, id: number, signal: AbortSignal) {
+  return readModelAutoSync(
+    await client.request(`/api/modern/groups/${id}/model-auto-sync`, { signal }),
+  )
+}
+export async function saveGroupModelAutoSync(
+  client: ApiClient,
+  id: number,
+  enabled: boolean,
+  signal: AbortSignal,
+) {
+  return readModelAutoSync(
+    await client.request(`/api/modern/groups/${id}/model-auto-sync`, {
+      method: 'PUT',
+      json: { enabled },
+      signal,
+    }),
+  )
 }
 
 export interface CredentialRow {

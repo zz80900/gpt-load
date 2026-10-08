@@ -210,6 +210,23 @@ func (s *Server) HTTPModule() httproute.Module {
 			controlRoute("control.modern.credentials.list", http.MethodGet, "/modern/groups/:group_id/credentials", s.handleListModernCredentials),
 			controlRoute("control.modern.credentials.get", http.MethodGet, "/modern/groups/:group_id/credentials/:credential_id", s.handleGetModernCredential),
 			controlRoute("control.modern.credentials.rpm", http.MethodGet, "/modern/groups/:group_id/credentials/:credential_id/rpm", s.handleCredentialRPM),
+			controlRoute(
+				"control.modern.group-model-auto-sync.get",
+				http.MethodGet,
+				"/modern/groups/:group_id/model-auto-sync",
+				s.handleGetGroupModelAutoSync,
+			),
+			controlRoute(
+				"control.modern.group-model-auto-sync.update",
+				http.MethodPut,
+				"/modern/groups/:group_id/model-auto-sync",
+				s.auditMutation(newMutationDescriptor(
+					"group_model_auto_sync_update",
+					"group",
+					groupMutationLocator,
+				)),
+				s.handleUpdateGroupModelAutoSync,
+			),
 			controlRoute("control.access-keys.rpm", http.MethodGet, "/access-keys/:id/rpm", s.handleAccessKeyRPM),
 			controlRoute(
 				"control.groups.list",

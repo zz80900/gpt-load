@@ -15,7 +15,8 @@ const props = defineProps<{
   loading?: boolean
   saveDisabled?: boolean
   saveLabel?: string
-  wide?: boolean
+  /** 抽屉尺寸档：sheet 660px，sheet-wide 820px（模型与别名面板专用）。 */
+  size?: 'default' | 'sheet' | 'sheet-wide'
   fill?: boolean
 }>()
 const emit = defineEmits<{ close: []; save: [] }>()
@@ -30,7 +31,7 @@ useLoadingActivity(() => Boolean(props.loading || props.pending))
 <template>
   <GroupEditorSurface
     :pending="pending"
-    :size="wide ? 'sheet' : 'default'"
+    :size="size"
     :title="title"
     :description="description"
     :hide-description="hideDescription"

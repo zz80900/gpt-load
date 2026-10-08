@@ -3,18 +3,21 @@ import { RefreshCw } from '@lucide/vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useURLState } from '@modern/app/url-state'
-import { useMessageSource } from '@modern/app/messages'
+import { useMessageSource, useMessages } from '@modern/app/messages'
 import { useI18n } from 'vue-i18n'
 import {
   discoverGroupModels,
+  getGroupModelAutoSync,
   getGroupModels,
+  groupModelAutoSyncKey,
   groupModelsKey,
+  saveGroupModelAutoSync,
   saveGroupModels,
 } from '@modern/api/group-detail'
 import type { GroupChannel } from '@modern/api/group-create'
 import type { GroupRow } from '@modern/api/groups'
 import type { ModelCandidate } from '@modern/api/model-discovery'
-import { AppButton, AppCollectionState } from '@modern/components/ui'
+import { AppButton, AppCollectionState, AppSwitch } from '@modern/components/ui'
 import { useApiClient } from '@shared/http/client-context'
 import { modelErrors, type GroupDraftModel } from './group-create-rules'
 import GroupModelPicker from './GroupModelPicker.vue'
@@ -80,6 +83,40 @@ const prices = computed(
       ]),
     ),
 )
+// 自动同步开关独立于模型草稿：切换即时保存，模型行校验失败不回滚开关，开关也不进 dirty。
+const messages = useMessages()
+const autoSyncQuery = useQuery({
+  queryKey: groupModelAutoSyncKey(props.group.id),
+  queryFn: ({ signal }) => getGroupModelAutoSync(client, props.group.id, signal),
+})
+const autoSyncEnabled = ref(false)
+const autoSyncSaving = ref(false)
+watch(
+  autoSyncQuery.data,
+  (enabled) => {
+    if (enabled !== undefined && !autoSyncSaving.value) autoSyncEnabled.value = enabled
+  },
+  { immediate: true },
+)
+async function toggleAutoSync(enabled: boolean): Promise<void> {
+  if (autoSyncSaving.value) return
+  const previous = autoSyncEnabled.value
+  autoSyncEnabled.value = enabled
+  autoSyncSaving.value = true
+  try {
+    const result = await saveGroupModelAutoSync(client, props.group.id, enabled, controller.signal)
+    if (controller.signal.aborted) return
+    autoSyncEnabled.value = result
+    cache.setQueryData(groupModelAutoSyncKey(props.group.id), result)
+    messages.show({ text: t('groupWorkflows.autoSyncSaved'), tone: 'success' })
+  } catch {
+    if (controller.signal.aborted) return
+    autoSyncEnabled.value = previous
+    messages.show({ text: t('groupWorkflows.autoSyncFailed'), tone: 'danger' })
+  } finally {
+    if (!controller.signal.aborted) autoSyncSaving.value = false
+  }
+}
 function cancelDiscovery(): void {
   discovery?.abort()
   discovering.value = false
@@ -144,7 +181,7 @@ useMessageSource(() => (error.value ? { text: error.value, tone: 'danger' } : un
     :pending="saving"
     :loading="query.isFetching.value"
     :save-disabled="!initialized"
-    wide
+    size="sheet-wide"
     fill
     @close="emit('close')"
     @save="save"
@@ -181,6 +218,17 @@ useMessageSource(() => (error.value ? { text: error.value, tone: 'danger' } : un
           >
             {{ t('groupWorkflows.syncModels') }}
           </AppButton>
+          <div v-if="channel?.discovery" class="modern-model-auto-sync">
+            <span>{{ t('groupWorkflows.autoSyncModels') }}</span>
+            <AppSwitch
+              :model-value="autoSyncEnabled"
+              :label="t('groupWorkflows.autoSyncModelsHint')"
+              size="sm"
+              :loading="autoSyncSaving"
+              :disabled="autoSyncQuery.isPending.value || autoSyncSaving"
+              @update:model-value="toggleAutoSync"
+            />
+          </div>
         </template>
       </GroupModelPicker>
     </template>
@@ -193,3 +241,15 @@ useMessageSource(() => (error.value ? { text: error.value, tone: 'danger' } : un
     @confirm="syncModels"
   />
 </template>
+
+<style scoped>
+/* AppSwitch 只渲染轨道（label 走 tooltip/aria），工具栏里的可见文案由这里排。 */
+.modern-model-auto-sync {
+  display: flex;
+  align-items: center;
+  gap: var(--modern-space-1);
+  color: var(--modern-muted);
+  font-size: var(--modern-font-size-small);
+  white-space: nowrap;
+}
+</style>

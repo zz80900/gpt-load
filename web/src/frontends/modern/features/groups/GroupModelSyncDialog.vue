@@ -8,7 +8,11 @@ import { discoverGroupModels } from '@modern/api/group-detail'
 import type { ModelCandidate } from '@modern/api/model-discovery'
 import { AppButton, AppConfirmDialog, AppNotice, AppSegmentedControl } from '@modern/components/ui'
 import { useApiClient } from '@shared/http/client-context'
-import { findModelNameConflicts, visibleAliases } from '@shared/models/model-aliases'
+import {
+  findModelNameConflicts,
+  visibleAliases,
+  withClaudePrefixedAliases,
+} from '@shared/models/model-aliases'
 import type { GroupDraftModel } from './group-create-rules'
 
 const props = defineProps<{ groupId: number; models: readonly GroupDraftModel[] }>()
@@ -53,15 +57,17 @@ const removals = computed(() =>
     ? []
     : current.filter((model) => !live.value.some((item) => item.id === model.id.trim())),
 )
-// 合并结果保留每行的既有别名（含隐藏的 claude-*[1m]，开关状态随之保留），增补行无别名。
+// 合并结果保留每行的既有别名（含隐藏的 claude-*[1m]，开关状态随之保留）；新增行补
+// claude-<id> 前缀别名，该名称已被组内认领时退回空别名。
 const next = computed<GroupDraftModel[]>(() => {
   const removed = new Set(removals.value.map((model) => model.key))
   let key = Math.max(-1, ...current.map((model) => model.key)) + 1
+  const kept = current.filter((model) => !removed.has(model.key))
   return [
-    ...current.filter((model) => !removed.has(model.key)),
-    ...additions.value.map((model) => ({
+    ...kept,
+    ...withClaudePrefixedAliases(kept, additions.value).map((model) => ({
       id: model.id,
-      aliases: [],
+      aliases: model.aliases,
       key: key++,
       origin: 'discovery' as const,
     })),

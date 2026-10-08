@@ -67,6 +67,7 @@ type Runtime struct {
 	stageCleaner       credentialStageCleaner
 	operationRecovery  operationRecoveryRuntime
 	catalogSync        catalogSyncRuntime
+	groupModelSync     catalogSyncRuntime
 	oauthCallback      *OAuthCallbackManager
 	manager            *state.Manager
 	validationInterval time.Duration
@@ -86,6 +87,7 @@ func NewRuntime(
 	requestLogCleaner RequestLogCleaner,
 	operationRecovery *Service,
 	catalogSync *CatalogSyncCoordinator,
+	groupModelSync *GroupModelAutoSyncCoordinator,
 ) *Runtime {
 	runtime := &Runtime{
 		registry:           registry,
@@ -93,6 +95,7 @@ func NewRuntime(
 		stageCleaner:       operationRecovery,
 		operationRecovery:  operationRecovery,
 		catalogSync:        catalogSync,
+		groupModelSync:     groupModelSync,
 		manager:            manager,
 		validationInterval: defaultValidationInterval,
 		validationJitter: func() time.Duration {
@@ -151,6 +154,13 @@ func (runtime *Runtime) Run(ctx context.Context) {
 		go func() {
 			defer wait.Done()
 			runtime.catalogSync.Run(ctx)
+		}()
+	}
+	if runtime.groupModelSync != nil {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			runtime.groupModelSync.Run(ctx)
 		}()
 	}
 	if runtime.oauthCallback != nil {

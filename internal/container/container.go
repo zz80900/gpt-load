@@ -214,6 +214,7 @@ func BuildContainer() (*dig.Container, error) {
 		gateway.NewHandlerWithLifecycle,
 		control.NewService,
 		control.NewCatalogSyncCoordinator,
+		control.NewGroupModelAutoSyncCoordinator,
 		func(service *control.Service) app.StartupBootstrap { return service },
 		func(service *control.Service) app.StartupRecovery { return service },
 		func(

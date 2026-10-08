@@ -1,16 +1,20 @@
 package control
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"gpt-load/internal/channel"
 	"gpt-load/internal/modelname"
 	app_errors "gpt-load/internal/platform/errors"
+	"gpt-load/internal/platform/response"
 	"gpt-load/internal/state"
 	"gpt-load/internal/storage/models"
 )
@@ -191,4 +195,68 @@ func (s *Service) syncGroupModelsOnce(ctx context.Context, groupID uint) (bool, 
 		return false, err
 	}
 	return true, nil
+}
+
+// GroupModelAutoSyncResponse 是 /modern/groups/:group_id/model-auto-sync 的响应体。
+// 只在本文件的 handler 内使用，不进入任何共享 DTO，因此 classic 契约不受影响。
+type GroupModelAutoSyncResponse struct {
+	Enabled bool `json:"enabled"`
+}
+
+// GroupModelAutoSyncUpdateRequest 只接受 enabled 一个布尔字段。
+type GroupModelAutoSyncUpdateRequest struct {
+	Enabled bool
+}
+
+// UnmarshalJSON 把「字段缺失 / null / 非布尔」统一报成 ErrValidation；未知字段与
+// 尾随值仍由 bindStrictJSON 负责（自定义解码器不会自动继承外层 DisallowUnknownFields）。
+func (request *GroupModelAutoSyncUpdateRequest) UnmarshalJSON(data []byte) error {
+	var payload struct {
+		Enabled *json.RawMessage `json:"enabled"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		return err
+	}
+	if payload.Enabled == nil || bytes.Equal(bytes.TrimSpace(*payload.Enabled), []byte("null")) {
+		return app_errors.ErrValidation
+	}
+	var enabled bool
+	if err := json.Unmarshal(*payload.Enabled, &enabled); err != nil {
+		return app_errors.ErrValidation
+	}
+	request.Enabled = enabled
+	return nil
+}
+
+func (s *Server) handleGetGroupModelAutoSync(c *gin.Context) {
+	id, ok := groupID(c, "get_group_model_auto_sync")
+	if !ok {
+		return
+	}
+	enabled, err := s.service.GetGroupModelAutoSync(c.Request.Context(), id)
+	if err != nil {
+		writeServiceError(c, "get_group_model_auto_sync", err)
+		return
+	}
+	response.SuccessI18n(c, "common.success", GroupModelAutoSyncResponse{Enabled: enabled})
+}
+
+func (s *Server) handleUpdateGroupModelAutoSync(c *gin.Context) {
+	id, ok := groupID(c, "update_group_model_auto_sync")
+	if !ok {
+		return
+	}
+	var request GroupModelAutoSyncUpdateRequest
+	if err := bindStrictJSON(c, &request); err != nil {
+		writeServiceError(c, "update_group_model_auto_sync", mapControlJSONError(err))
+		return
+	}
+	enabled, err := s.service.UpdateGroupModelAutoSync(c.Request.Context(), id, request.Enabled)
+	if err != nil {
+		writeServiceError(c, "update_group_model_auto_sync", err)
+		return
+	}
+	response.SuccessI18n(c, "common.success", GroupModelAutoSyncResponse{Enabled: enabled})
 }

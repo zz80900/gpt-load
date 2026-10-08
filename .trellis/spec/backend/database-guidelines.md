@@ -87,6 +87,27 @@ Renaming a fork-owned migration does not renumber upstream files; instead
 already published images, including the MySQL `<id>#building` resume markers, once
 and idempotently at startup.
 
+### The anchor is a release-time decision
+
+Invariant 2 turns the anchor number into a release-time check, not a planning-time
+one (a plan written before an upstream merge is stale by definition):
+
+- Anchor at the registry's **last** upstream migration at the moment the private
+  migration is first published. Anchoring before an upstream migration that already
+  sits in some instance's ledger breaks invariant 2 for every existing instance and
+  the service refuses to start:
+  `schema_migrations contains unknown or non-contiguous migration "<upstream ID that now sits one position later>"`.
+  Re-check `migrations[len(migrations)-1].ID` (or the newest file name in
+  `internal/storage/migrations/`) right before releasing.
+- Re-anchoring an already published private migration is allowed, but the retired
+  ledger ID must be added to `internal/storage/migration_legacy_ids.go`. Precedent:
+  `v2.0.0-zz.17` wrote `0020_zz_group_model_auto_sync`, which was re-anchored to
+  `0029_zz_group_model_auto_sync` by `51593f3e`.
+- Regression tests must seed the **previous release's ledger by ID**
+  (`publishedLedgerWithoutForkTail` in `internal/storage/migration_test.go`), then run
+  `AutoMigrate`. Prefixes of the current registry can never fail this way, so an
+  index-based test gives false confidence — that is exactly how zz.17 shipped broken.
+
 ### Registry and ledger contract
 
 Two invariants the runner enforces on every startup:

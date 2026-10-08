@@ -85,6 +85,57 @@ export function normalizeAliases(values: readonly string[], id: string): string[
   return aliases
 }
 
+/** 前缀别名的前缀，与后端 control.claudePrefix 同源。 */
+const claudePrefix = 'claude-'
+
+/** 上下文后缀，与后端 modelname.ContextSuffixes 同形。 */
+const contextSuffixes = ['[1M]', '[1m]']
+
+/** 服务端别名长度上限，与后端 group_write.go 的 maxModelNameBytes 一致。 */
+const maxModelNameBytes = 255
+
+/**
+ * 同步新增模型要补的 claude- 前缀别名；不适用时返回 null。
+ *
+ * 与后端 claudePrefixedName 同规则：空 ID、已带 claude- 前缀（大小写不敏感）、以上下文后缀
+ * 结尾（带后缀的名字会额外认领基名，前缀叠加后撞名的概率不可控）、超过长度上限都不生成。
+ */
+export function claudePrefixedAlias(id: string): string | null {
+  const trimmed = id.trim()
+  if (trimmed === '' || trimmed.toLowerCase().startsWith(claudePrefix)) return null
+  if (contextSuffixes.some((suffix) => trimmed.endsWith(suffix))) return null
+  const alias = `${claudePrefix}${trimmed}`
+  if (new TextEncoder().encode(alias).length > maxModelNameBytes) return null
+  return alias
+}
+
+/**
+ * 给同步新增的行生成 claude- 别名：名称被组内其它行认领时该行退回空别名。
+ *
+ * 认领集合取现有行与全部新增行的 ID、规范化别名（与 findModelNameConflicts 同口径），
+ * 先把新增行自己的 ID 也算进去，因此新别名不会与同批新增的模型撞名，也不会凭空制造后端
+ * 写路径的 MODEL_NAME_CONFLICT。
+ *
+ * 始终返回新数组、不就地改写行对象：对话框里的行与面板草稿共享引用，就地改写会污染脏检查
+ * 基线（同 withClaudeAdapter 的既有教训）。
+ */
+export function withClaudePrefixedAliases<T extends ModelAliasDraft>(
+  rows: readonly ModelAliasDraft[],
+  additions: readonly T[],
+): (T & { aliases: string[] })[] {
+  const claimed = new Set<string>()
+  for (const row of [...rows, ...additions]) {
+    const id = row.id.trim()
+    if (id === '') continue
+    claimed.add(id)
+    for (const alias of normalizeAliases(row.aliases ?? [], id)) claimed.add(alias)
+  }
+  return additions.map((addition) => {
+    const alias = claudePrefixedAlias(addition.id)
+    return { ...addition, aliases: alias !== null && !claimed.has(alias) ? [alias] : [] }
+  })
+}
+
 export interface ModelNameConflict {
   client_model: string
   indexes: number[]

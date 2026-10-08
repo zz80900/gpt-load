@@ -8,7 +8,7 @@ withDefaults(
     title: string
     description: string
     pending?: boolean
-    size?: 'default' | 'sheet'
+    size?: 'default' | 'sheet' | 'sheet-wide'
     preventAutoFocus?: boolean
     hideDescription?: boolean
   }>(),

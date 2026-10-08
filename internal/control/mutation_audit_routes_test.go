@@ -1146,6 +1146,23 @@ func groupMutationAuditCases() []groupMutationAuditCase {
 			),
 		},
 		{
+			operation: "group_model_auto_sync_update",
+			success:   groupModelAutoSyncAuditSeedRequest(),
+			rejected: func(
+				_ *testing.T,
+				_ serviceFixture,
+			) (mutationAuditRequest, string, string) {
+				return mutationAuditRequest{
+						method: http.MethodPut,
+						path:   "/api/modern/groups/0/model-auto-sync",
+						body:   `{"enabled":true}`,
+					},
+					"group:unknown",
+					app_errors.ErrBadRequest.Code
+			},
+			database: groupModelAutoSyncAuditSeedRequest(),
+		},
+		{
 			operation: "group_delete",
 			success:   groupAuditSeedRequest(http.MethodDelete, "", ""),
 			rejected: func(
@@ -1269,6 +1286,27 @@ func groupAuditSeedRequest(
 				suffix,
 			body: body,
 		}, locator
+	}
+}
+
+func groupModelAutoSyncAuditSeedRequest() func(*testing.T, serviceFixture) (mutationAuditRequest, string) {
+	return func(
+		t *testing.T,
+		fixture serviceFixture,
+	) (mutationAuditRequest, string) {
+		groupID := createGroupForCredentialImport(
+			t,
+			fixture,
+			"sk-group-auto-sync-audit",
+		)
+		return mutationAuditRequest{
+			method: http.MethodPut,
+			path: fmt.Sprintf(
+				"/api/modern/groups/%d/model-auto-sync",
+				groupID,
+			),
+			body: `{"enabled":true}`,
+		}, fmt.Sprintf("group:%d", groupID)
 	}
 }
 

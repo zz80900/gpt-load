@@ -1,10 +1,18 @@
 package control
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
+	"gpt-load/internal/platform/config"
 	app_errors "gpt-load/internal/platform/errors"
 	"gpt-load/internal/storage/models"
 )
@@ -139,5 +147,148 @@ func TestGroupModelAutoSyncPersistence(t *testing.T) {
 	_, err = fixture.service.GetGroupModelAutoSync(t.Context(), groupID+999)
 	if !errors.Is(err, app_errors.ErrResourceNotFound) {
 		t.Fatalf("missing group error = %v", err)
+	}
+}
+
+func TestGroupModelAutoSyncHTTPEndpoint(t *testing.T) {
+	t.Parallel()
+	initControlI18n(t)
+	fixture := newServiceFixture(t)
+	groupID := createGroupWithCredentials(t, fixture, "sk-auto-sync-http")
+	engine := gin.New()
+	NewServer(&config.Config{AuthKey: authTestKey}, fixture.service).RegisterRoutes(engine)
+	groupParam := strconv.FormatUint(uint64(groupID), 10)
+
+	recorder := serveGroupModelAutoSyncRequest(t, engine, http.MethodGet, groupParam, "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET = %d %s", recorder.Code, recorder.Body.String())
+	}
+	if enabled := decodeGroupModelAutoSyncEnabled(t, recorder); enabled {
+		t.Fatal("default state = enabled, want disabled")
+	}
+
+	modelsBefore := loadCreatedGroupModels(t, fixture, groupID)
+	revisionBefore := fixture.manager.Current().Revision
+
+	recorder = serveGroupModelAutoSyncRequest(t, engine, http.MethodPut, groupParam, `{"enabled":true}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", recorder.Code, recorder.Body.String())
+	}
+	if enabled := decodeGroupModelAutoSyncEnabled(t, recorder); !enabled {
+		t.Fatal("PUT response = disabled, want enabled")
+	}
+	recorder = serveGroupModelAutoSyncRequest(t, engine, http.MethodGet, groupParam, "")
+	if enabled := decodeGroupModelAutoSyncEnabled(t, recorder); !enabled {
+		t.Fatal("GET after PUT = disabled, want enabled")
+	}
+	if got := loadCreatedGroupModels(t, fixture, groupID); !reflect.DeepEqual(got, modelsBefore) {
+		t.Fatalf("models changed = %#v, want %#v", got, modelsBefore)
+	}
+	if got := fixture.manager.Current().Revision; got != revisionBefore {
+		t.Fatalf("revision = %d, want unchanged %d", got, revisionBefore)
+	}
+
+	recorder = serveGroupModelAutoSyncRequest(t, engine, http.MethodPut, groupParam, `{"enabled":false}`)
+	if recorder.Code != http.StatusOK || decodeGroupModelAutoSyncEnabled(t, recorder) {
+		t.Fatalf("disable = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGroupModelAutoSyncHTTPRejectsInvalidBodies(t *testing.T) {
+	t.Parallel()
+	initControlI18n(t)
+	fixture := newServiceFixture(t)
+	groupID := createGroupWithCredentials(t, fixture, "sk-auto-sync-invalid")
+	engine := gin.New()
+	NewServer(&config.Config{AuthKey: authTestKey}, fixture.service).RegisterRoutes(engine)
+	groupParam := strconv.FormatUint(uint64(groupID), 10)
+
+	for _, test := range []struct {
+		name     string
+		body     string
+		wantCode string
+	}{
+		{name: "missing field", body: `{}`, wantCode: app_errors.ErrValidation.Code},
+		{name: "null field", body: `{"enabled":null}`, wantCode: app_errors.ErrValidation.Code},
+		{name: "non boolean", body: `{"enabled":"yes"}`, wantCode: app_errors.ErrValidation.Code},
+		{name: "unknown field", body: `{"enabled":true,"extra":1}`, wantCode: app_errors.ErrInvalidJSON.Code},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := serveGroupModelAutoSyncRequest(t, engine, http.MethodPut, groupParam, test.body)
+			assertGroupModelAutoSyncError(t, recorder, http.StatusBadRequest, test.wantCode)
+		})
+	}
+	if enabled, err := fixture.service.GetGroupModelAutoSync(t.Context(), groupID); err != nil || enabled {
+		t.Fatalf("rejected bodies changed state: %v, %v", enabled, err)
+	}
+
+	recorder := serveGroupModelAutoSyncRequest(t, engine, http.MethodPut, "999999", `{"enabled":true}`)
+	assertGroupModelAutoSyncError(t, recorder, http.StatusNotFound, app_errors.ErrResourceNotFound.Code)
+	recorder = serveGroupModelAutoSyncRequest(t, engine, http.MethodGet, "999999", "")
+	assertGroupModelAutoSyncError(t, recorder, http.StatusNotFound, app_errors.ErrResourceNotFound.Code)
+}
+
+func serveGroupModelAutoSyncRequest(
+	t *testing.T,
+	engine *gin.Engine,
+	method string,
+	groupParam string,
+	body string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		method,
+		"/api/modern/groups/"+groupParam+"/model-auto-sync",
+		strings.NewReader(body),
+	)
+	request.Header.Set("Authorization", "Bearer "+authTestKey)
+	request.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// decodeGroupModelAutoSyncEnabled 同时断言 data 里只有 enabled 一个字段，
+// 防止响应结构悄悄长出会牵动 classic 白名单的共享字段。
+func decodeGroupModelAutoSyncEnabled(t *testing.T, recorder *httptest.ResponseRecorder) bool {
+	t.Helper()
+	var envelope struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	raw, ok := envelope.Data["enabled"]
+	if !ok || len(envelope.Data) != 1 {
+		t.Fatalf("data fields = %#v, want only enabled", envelope.Data)
+	}
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err != nil {
+		t.Fatalf("decode enabled: %v", err)
+	}
+	return enabled
+}
+
+func assertGroupModelAutoSyncError(
+	t *testing.T,
+	recorder *httptest.ResponseRecorder,
+	wantStatus int,
+	wantCode string,
+) {
+	t.Helper()
+	var envelope struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if recorder.Code != wantStatus || envelope.Code != wantCode {
+		t.Fatalf(
+			"response = %d %#v, want %d %q",
+			recorder.Code,
+			envelope,
+			wantStatus,
+			wantCode,
+		)
 	}
 }

@@ -7,7 +7,7 @@ withDefaults(
     title: string
     description: string
     placement?: 'dialog' | 'sidebar' | 'editor'
-    size?: 'default' | 'wide' | 'sheet' | 'confirm'
+    size?: 'default' | 'wide' | 'sheet' | 'sheet-wide' | 'confirm'
   }>(),
   { placement: 'dialog', size: 'default' },
 )
@@ -64,6 +64,9 @@ defineEmits<{ openAutoFocus: [event: Event] }>()
 }
 .modern-dialog--sheet {
   --modern-dialog-width: var(--modern-dialog-sheet-width);
+}
+.modern-dialog--sheet-wide {
+  --modern-dialog-width: var(--modern-dialog-sheet-wide-width);
 }
 .modern-dialog--confirm {
   --modern-dialog-width: var(--modern-dialog-confirm-width);
