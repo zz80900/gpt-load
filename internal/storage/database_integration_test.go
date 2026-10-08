@@ -132,7 +132,7 @@ func TestExternalDatabaseLifecycle(t *testing.T) {
 	if err := db.Table("schema_migrations").Order("id").Pluck("id", &migrationIDs).Error; err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if len(migrationIDs) != 30 || migrationIDs[0] != "0001_initial" ||
+	if len(migrationIDs) != 31 || migrationIDs[0] != "0001_initial" ||
 		migrationIDs[1] != "0002_access_key_cost_limits" ||
 		migrationIDs[2] != "0003_remove_observation_fresh_until" ||
 		migrationIDs[3] != "0004_usage_stats_group_activity_index" ||
@@ -140,8 +140,8 @@ func TestExternalDatabaseLifecycle(t *testing.T) {
 		migrationIDs[5] != "0006_error_decision" ||
 		migrationIDs[6] != "0007_access_key_lifecycle" ||
 		migrationIDs[7] != "0008_remove_inject_usage_options" ||
-		migrationIDs[8] != "0009_price_multipliers" || migrationIDs[9] != "0010_model_cooldown" || migrationIDs[10] != "0011_custom_access_keys" || migrationIDs[11] != "0012_access_key_mask_prefix" || migrationIDs[12] != "0013_validation_protocol" || migrationIDs[13] != "0014_affinity_kind" || migrationIDs[14] != "0014_zz_anthropic_betas" || migrationIDs[15] != "0015_group_usage_index" || migrationIDs[16] != "0016_credential_quota_history" || migrationIDs[17] != "0017_request_log_operation_index" || migrationIDs[18] != "0018_auto_model" || migrationIDs[19] != "0019_auto_decision_attribution" || migrationIDs[20] != "0020_client_model_overrides" || migrationIDs[21] != "0021_request_audit" || migrationIDs[22] != "0022_rpm_stats" || migrationIDs[23] != "0023_access_key_concurrency" || migrationIDs[24] != "0024_request_log_output_timing" || migrationIDs[25] != "0025_proxy_catalog" || migrationIDs[26] != "0026_credential_names" || migrationIDs[27] != "0027_remove_request_log_output_timing" || migrationIDs[28] != "0028_request_log_client_ip" || migrationIDs[29] != "0029_group_priority" {
-		t.Fatalf("migration ledger = %v, want complete 30-entry chain (0001..0029 plus 0014_zz_anthropic_betas)", migrationIDs)
+		migrationIDs[8] != "0009_price_multipliers" || migrationIDs[9] != "0010_model_cooldown" || migrationIDs[10] != "0011_custom_access_keys" || migrationIDs[11] != "0012_access_key_mask_prefix" || migrationIDs[12] != "0013_validation_protocol" || migrationIDs[13] != "0014_affinity_kind" || migrationIDs[14] != "0014_zz_anthropic_betas" || migrationIDs[15] != "0015_group_usage_index" || migrationIDs[16] != "0016_credential_quota_history" || migrationIDs[17] != "0017_request_log_operation_index" || migrationIDs[18] != "0018_auto_model" || migrationIDs[19] != "0019_auto_decision_attribution" || migrationIDs[20] != "0020_client_model_overrides" || migrationIDs[21] != "0020_zz_group_model_auto_sync" || migrationIDs[22] != "0021_request_audit" || migrationIDs[23] != "0022_rpm_stats" || migrationIDs[24] != "0023_access_key_concurrency" || migrationIDs[25] != "0024_request_log_output_timing" || migrationIDs[26] != "0025_proxy_catalog" || migrationIDs[27] != "0026_credential_names" || migrationIDs[28] != "0027_remove_request_log_output_timing" || migrationIDs[29] != "0028_request_log_client_ip" || migrationIDs[30] != "0029_group_priority" {
+		t.Fatalf("migration ledger = %v, want complete 31-entry chain (0001..0029 plus 0014_zz_anthropic_betas and 0020_zz_group_model_auto_sync)", migrationIDs)
 	}
 	if !db.Migrator().HasIndex("usage_stats", "idx_usage_stats_group_bucket") {
 		t.Fatal("usage_stats group activity index is missing")

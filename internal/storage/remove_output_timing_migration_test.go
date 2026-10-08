@@ -23,7 +23,7 @@ func TestExternalRemoveOutputTimingMigrationContract(t *testing.T) {
 }
 
 func testRemoveOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
-	for _, version := range []int{0, 24, 25, 26, 27} {
+	for _, version := range []int{0, 25, 26, 27, 28} {
 		t.Run(fmt.Sprintf("upgrade_%d", version), func(t *testing.T) {
 			db := open(t)
 			if db.Dialector.Name() == "sqlite" {
@@ -46,7 +46,7 @@ func testRemoveOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.D
 			}
 		})
 	}
-	if len(migrations) < 28 {
+	if len(migrations) < 29 {
 		t.Fatal("cleanup migration is missing")
 	}
 	for _, columns := range []int{1, 2} {
@@ -55,11 +55,11 @@ func testRemoveOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.D
 			if db.Dialector.Name() == "sqlite" {
 				t.Parallel()
 			}
-			if err := applyMigrationRegistry(db, migrations[:27]); err != nil {
+			if err := applyMigrationRegistry(db, migrations[:28]); err != nil {
 				t.Fatal(err)
 			}
 			seedTimingCleanupLog(t, db)
-			entry := migrations[27]
+			entry := migrations[28]
 			entry.Up = func(tx *gorm.DB) error {
 				for _, name := range []string{"first_output", "last_output"}[:columns] {
 					statement := "ALTER TABLE request_logs DROP COLUMN " + name + "_ms"
@@ -72,7 +72,7 @@ func testRemoveOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.D
 				}
 				return fmt.Errorf("interrupt cleanup DDL")
 			}
-			registry := append(append([]migration(nil), migrations[:27]...), entry)
+			registry := append(append([]migration(nil), migrations[:28]...), entry)
 			if err := applyMigrationRegistry(db, registry); err == nil {
 				t.Fatal("expected interruption")
 			}
@@ -90,7 +90,7 @@ func testRemoveOutputTimingMigration(t *testing.T, open func(*testing.T) *gorm.D
 		if db.Dialector.Name() == "sqlite" {
 			t.Parallel()
 		}
-		if err := applyMigrationRegistry(db, migrations[:27]); err != nil {
+		if err := applyMigrationRegistry(db, migrations[:28]); err != nil {
 			t.Fatal(err)
 		}
 		statement := "ALTER TABLE request_logs DROP COLUMN first_output_ms"

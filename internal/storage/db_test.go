@@ -682,6 +682,7 @@ func TestAutoMigrateCreatesUsageJournalAndMigrationLedger(t *testing.T) {
 		"0018_auto_model",
 		"0019_auto_decision_attribution",
 		"0020_client_model_overrides",
+		"0020_zz_group_model_auto_sync",
 		"0021_request_audit",
 		"0022_rpm_stats",
 		"0023_access_key_concurrency",

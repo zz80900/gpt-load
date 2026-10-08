@@ -72,10 +72,13 @@ func loadCreatedGroupModels(t *testing.T, fixture serviceFixture, groupID uint) 
 func createGroupWithCredentials(t *testing.T, fixture serviceFixture, credentials string) uint {
 	t.Helper()
 	name := fmt.Sprintf("credential-group-%d", testIdempotencySequence.Add(1))
+	// 同一个 fixture 里多次建组时 target 必然相同（channel/params 一致），
+	// ConfirmSameTarget 模拟「已在界面上确认过重复目标」，否则第二组会被
+	// 上游的同目标守卫拒绝（CHANNEL_TARGET_CONFLICT）。
 	result, err := fixture.service.CreateGroup(t.Context(), GroupCreateRequest{
 		Name: &name, ChannelID: channel.OpenAI, Params: json.RawMessage(`{}`),
 		Models:      optionalGroupModels{Set: true, Values: []GroupModel{{ID: "gpt-4o"}}},
-		Credentials: credentials, ConnectionType: "api_key",
+		Credentials: credentials, ConnectionType: "api_key", ConfirmSameTarget: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateGroup(%q) error = %v", name, err)

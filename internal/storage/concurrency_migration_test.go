@@ -27,11 +27,11 @@ func testConcurrencyMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 			if db.Dialector.Name() == "sqlite" {
 				t.Parallel()
 			}
-			if len(migrations) < 24 {
+			if len(migrations) < 25 {
 				t.Fatal("concurrency migration is missing")
 			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:23]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:24]); err != nil {
 					t.Fatal(err)
 				}
 				if err := db.Table("access_keys").Create(map[string]any{"id": 1, "name": "existing", "key_value": "test-cipher", "key_hash": "test-hash", "key_suffix": "cafe", "status": "active", "created_at_ms": 1, "updated_at_ms": 1}).Error; err != nil {
@@ -39,7 +39,7 @@ func testConcurrencyMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 				}
 			}
 			if scenario == "interrupted" {
-				entry := migrations[23]
+				entry := migrations[24]
 				up := entry.Up
 				entry.Up = func(tx *gorm.DB) error {
 					if err := up(tx); err != nil {
@@ -47,7 +47,7 @@ func testConcurrencyMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 					}
 					return fmt.Errorf("interrupt after concurrency DDL")
 				}
-				if err := applyMigrationRegistry(db, append(append([]migration(nil), migrations[:23]...), entry)); err == nil {
+				if err := applyMigrationRegistry(db, append(append([]migration(nil), migrations[:24]...), entry)); err == nil {
 					t.Fatal("interruption succeeded")
 				}
 			}

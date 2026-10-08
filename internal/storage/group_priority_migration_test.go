@@ -24,11 +24,11 @@ func testGroupPriorityMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 	for _, scenario := range []string{"fresh", "upgrade", "interrupted"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := open(t)
-			if len(migrations) < 30 {
+			if len(migrations) < 31 {
 				t.Fatal("group priority migration is missing")
 			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:29]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:30]); err != nil {
 					t.Fatal(err)
 				}
 				if err := db.Table("groups").Create(map[string]any{
@@ -39,7 +39,7 @@ func testGroupPriorityMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 				}
 			}
 			if scenario == "interrupted" {
-				entry := migrations[29]
+				entry := migrations[30]
 				up := entry.Up
 				entry.Up = func(tx *gorm.DB) error {
 					if err := up(tx); err != nil {
@@ -47,7 +47,7 @@ func testGroupPriorityMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 					}
 					return fmt.Errorf("interrupt priority migration")
 				}
-				registry := append(append([]migration(nil), migrations[:29]...), entry)
+				registry := append(append([]migration(nil), migrations[:30]...), entry)
 				if err := applyMigrationRegistry(db, registry); err == nil {
 					t.Fatal("expected migration interruption")
 				}

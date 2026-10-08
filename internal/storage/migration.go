@@ -116,6 +116,8 @@ var migrations = []migration{
 	{ID: migrationfiles.ID0018, Up: migrationfiles.Up0018, Validate: migrationfiles.Validate0018, ValidateRecoverable: migrationfiles.ValidateRecoverable0018},
 	{ID: migrationfiles.ID0019, Up: migrationfiles.Up0019, Validate: migrationfiles.Validate0019, ValidateRecoverable: migrationfiles.ValidateRecoverable0019},
 	{ID: migrationfiles.ID0020, Up: migrationfiles.Up0020, Validate: migrationfiles.Validate0020, ValidateRecoverable: migrationfiles.ValidateRecoverable0020},
+	// Fork-owned, anchored to the current upstream tip. See migrations/doc.go.
+	{ID: migrationfiles.ID0020ZZ, Up: migrationfiles.Up0020ZZ, Validate: migrationfiles.Validate0020ZZ, ValidateRecoverable: migrationfiles.ValidateRecoverable0020ZZ},
 	{ID: migrationfiles.ID0021, Up: migrationfiles.Up0021, Validate: migrationfiles.Validate0021, ValidateRecoverable: migrationfiles.ValidateRecoverable0021},
 	{ID: migrationfiles.ID0022, Up: migrationfiles.Up0022, Validate: migrationfiles.Validate0022, ValidateRecoverable: migrationfiles.ValidateRecoverable0022},
 	{ID: migrationfiles.ID0023, Up: migrationfiles.Up0023, Validate: migrationfiles.Validate0023, ValidateRecoverable: migrationfiles.ValidateRecoverable0023},

@@ -33,6 +33,7 @@ func TestMigrationRegistryContainsOrderedMigrations(t *testing.T) {
 		migrationfiles.ID0018,
 		migrationfiles.ID0019,
 		migrationfiles.ID0020,
+		migrationfiles.ID0020ZZ,
 		migrationfiles.ID0021,
 		migrationfiles.ID0022,
 		migrationfiles.ID0023,

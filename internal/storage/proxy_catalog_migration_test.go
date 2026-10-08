@@ -35,10 +35,10 @@ func testProxyCatalogMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 		if db.Dialector.Name() == "sqlite" {
 			t.Parallel()
 		}
-		if err := applyMigrationRegistry(db, migrations[:25]); err != nil {
+		if err := applyMigrationRegistry(db, migrations[:26]); err != nil {
 			t.Fatal(err)
 		}
-		if err := migrations[25].Up(db); err != nil {
+		if err := migrations[26].Up(db); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Migrator().DropIndex(&models.Proxy{}, "ux_proxies_fingerprint"); err != nil {
@@ -61,12 +61,12 @@ func testProxyCatalogMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 				t.Fatal("proxy catalog migration is missing")
 			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:25]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:26]); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if scenario == "interrupted" || scenario == "missing_indexes" {
-				entry := migrations[25]
+				entry := migrations[26]
 				up := entry.Up
 				entry.Up = func(tx *gorm.DB) error {
 					if err := up(tx); err != nil {
@@ -81,7 +81,7 @@ func testProxyCatalogMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 					}
 					return fmt.Errorf("interrupt proxy migration")
 				}
-				if err := applyMigrationRegistry(db, append(append([]migration(nil), migrations[:25]...), entry)); err == nil {
+				if err := applyMigrationRegistry(db, append(append([]migration(nil), migrations[:26]...), entry)); err == nil {
 					t.Fatal("expected interrupted migration")
 				}
 			}

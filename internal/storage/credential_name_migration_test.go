@@ -29,11 +29,11 @@ func testCredentialNameMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 			if db.Dialector.Name() == "sqlite" {
 				t.Parallel()
 			}
-			if len(migrations) < 27 {
+			if len(migrations) < 28 {
 				t.Fatal("credential name migration is missing")
 			}
 			if scenario != "fresh" {
-				if err := applyMigrationRegistry(db, migrations[:26]); err != nil {
+				if err := applyMigrationRegistry(db, migrations[:27]); err != nil {
 					t.Fatal(err)
 				}
 				if err := db.Table("groups").Create(map[string]any{"id": 1, "name": "existing", "channel_id": "openai", "params": "{}", "models": "[]", "created_at_ms": 1, "updated_at_ms": 1}).Error; err != nil {
@@ -44,7 +44,7 @@ func testCredentialNameMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 				}
 			}
 			if scenario == "interrupted" {
-				entry := migrations[26]
+				entry := migrations[27]
 				up := entry.Up
 				entry.Up = func(tx *gorm.DB) error {
 					if err := up(tx); err != nil {
@@ -52,7 +52,7 @@ func testCredentialNameMigration(t *testing.T, open func(*testing.T) *gorm.DB) {
 					}
 					return fmt.Errorf("interrupt credential name DDL")
 				}
-				registry := append(append([]migration(nil), migrations[:26]...), entry)
+				registry := append(append([]migration(nil), migrations[:27]...), entry)
 				if err := applyMigrationRegistry(db, registry); err == nil {
 					t.Fatal("expected migration interruption")
 				}
