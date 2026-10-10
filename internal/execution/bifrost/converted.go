@@ -130,6 +130,10 @@ func buildConvertedResponsesRequest(spec execution.AttemptSpec, provider schemas
 		return nil, err
 	}
 	stripResponsesControlParams(request.Params)
+	// 原生 openai-responses 路由（不支持透传的上游）同样复用本构造，fast 映射仅限转换路由。
+	if spec.RouteMode == execution.RouteConverted {
+		applyConvertedFastMode(request)
+	}
 	return request, nil
 }
 
@@ -280,6 +284,29 @@ func stripResponsesControlParams(params *schemas.ResponsesParameters) {
 			"api_key", "apikey", "x_api_key", "x_goog_api_key":
 			delete(params.ExtraParams, key)
 		}
+	}
+}
+
+// applyConvertedFastMode 把 Anthropic fast mode 的 speed="fast" 映射为上游 service_tier="priority"，
+// 与 Codex(CPA) 路径的既有映射保持一致。Anthropic 的 service_tier 字段语义是 auto/standard_only，
+// 不是 fast 载体；speed 只落在中立的 ExtraParams 里，而该转换路径默认不合并扩展参数，
+// 所以在这里显式提取并清理，避免 speed 或错误 tier 到达上游。
+func applyConvertedFastMode(request *schemas.BifrostResponsesRequest) {
+	if request == nil || request.Params == nil {
+		return
+	}
+	raw, exists := request.Params.ExtraParams["speed"]
+	if !exists {
+		return
+	}
+	delete(request.Params.ExtraParams, "speed")
+	speed, ok := raw.(string)
+	if !ok {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(speed), "fast") {
+		tier := schemas.BifrostServiceTierPriority
+		request.Params.ServiceTier = &tier
 	}
 }
 
