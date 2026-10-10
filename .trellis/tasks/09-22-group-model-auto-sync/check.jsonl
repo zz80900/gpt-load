@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/09-22-group-model-auto-sync/prd.md", "reason": "按 AC1-AC11 逐条核对：开关即时保存且不进草稿、只增不删、claude- 前缀跳过与冲突降级、classic 零改动、抽屉只加宽模型面板。"}
+{"file": ".trellis/tasks/09-22-group-model-auto-sync/design.md", "reason": "核对三个取舍是否被实现遵守：独立列而非 overrides、/api/modern 端点而非共享 DTO、独立调度器而非复用定价目录协调器。"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "迁移注册顺序、Validate 三件套、三个清单与 integration 链长是否同步，旧账本仍是新注册表前缀。"}
+{"file": ".trellis/spec/backend/model-name-contract.md", "reason": "核对合并结果交给 normalizeGroupModels 时无跨 ID 冲突，同 ID 多行不误杀，带 [1M]/[1m] 的模型不生成前缀别名。"}
+{"file": ".trellis/tasks/09-22-group-model-auto-sync/research/backend-group-model-sync.md", "reason": "回归 classic_api_contract_test 与 server_test 的 /groups GET 清单：本次不得新增共享 DTO 字段，也不得把 /modern 路由写进该清单。"}
+{"file": ".trellis/tasks/09-22-group-model-auto-sync/research/frontend-model-panel.md", "reason": "核对开关不接入 signature/dirty、别名生成产出新数组、sheet-wide 不影响健康详情与模型目录设置。"}

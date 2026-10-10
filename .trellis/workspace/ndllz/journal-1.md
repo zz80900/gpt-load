@@ -158,3 +158,26 @@ modern 分组列表此前只在 priority 模式把未启用分组置后，默认
 ### Status
 
 [OK] **Completed**
+
+
+## Session 8: 网关强制 fast mode 与 defer_loading 一致性修复
+
+**Date**: 2026-10-10
+**Task**: 网关强制 fast mode 与 defer_loading 一致性修复
+**Branch**: `main`
+
+### Summary
+
+探查 anthropic→openai-responses 转换链路的字段语义:探针实测确认 anthropic 的 service_tier 只有 auto/standard_only 语义、speed 才是 fast mode 载体,且二者经转换层默认都到不了上游;实现 applyConvertedFastMode(speed:fast→service_tier:priority,RouteConverted 门禁保护 DeepSeek native Anthropic 路由);修复上游 400 Invalid Value 'tools.defer_loading'. Deferred tools require tools.tool_search:转换路由在无 tool_search 声明时剥离孤儿 defer_loading(含 namespace 递归,CPA 路径不受影响);新增 .trellis/spec/backend/converted-route-fields.md 记录转换路由字段契约;两任务均经独立复核与变异核验,联调手工验收待执行。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b84da7b1` | (see git log) |
+| `e6c72b97` | (see git log) |
+| `96a2bd9f` | (see git log) |
+
+### Status
+
+[OK] **Completed**

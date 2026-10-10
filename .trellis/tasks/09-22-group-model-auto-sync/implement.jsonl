@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "fork 迁移锚定式编号、三函数模板、注册表字典序、三个清单测试与 integration 链长。阶段 1 的 0020_zz_group_model_auto_sync 必须按此落地，不得占用上游未发布号段。"}
+{"file": ".trellis/spec/backend/model-name-contract.md", "reason": "External / Routable 两套名称口径、[1M]/[1m] 基名派生、跨 ID 冲突与同 ID 多行放行。mergeAutoSyncModels 与前端 claude- 别名生成都要按这个契约，不能另造一套冲突规则。"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "控制面与存储的依赖方向。新调度器与端点只能放在 internal/control，不得把后台任务语义塞进 state.Compile。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "开关字段会同时碰到存储、modern API、classic 契约测试与前端缓存。改共享 DTO 或 overrides 键之前必须先看跨层影响，本次正是因此改走独立列与 /modern 端点。"}
+{"file": ".trellis/tasks/09-22-group-model-auto-sync/research/backend-group-model-sync.md", "reason": "发现路径、UpdateGroupModels 全量替换、CatalogSyncCoordinator 调度形状、classic 契约与路由清单的证据，阶段 2-4 的落点以这份研究为准。"}
+{"file": ".trellis/tasks/09-22-group-model-auto-sync/research/frontend-model-panel.md", "reason": "抽屉尺寸链、开关即时保存、同步对话框浅拷贝与 i18n 三语约束，阶段 5 不得改坏草稿脏检查与其它 sheet 面板。"}
