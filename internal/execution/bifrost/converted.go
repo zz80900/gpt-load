@@ -133,6 +133,7 @@ func buildConvertedResponsesRequest(spec execution.AttemptSpec, provider schemas
 	// 原生 openai-responses 路由（不支持透传的上游）同样复用本构造，fast 映射仅限转换路由。
 	if spec.RouteMode == execution.RouteConverted {
 		applyConvertedFastMode(request)
+		stripOrphanedDeferredToolFlags(request)
 	}
 	return request, nil
 }
@@ -307,6 +308,57 @@ func applyConvertedFastMode(request *schemas.BifrostResponsesRequest) {
 	if strings.EqualFold(strings.TrimSpace(speed), "fast") {
 		tier := schemas.BifrostServiceTierPriority
 		request.Params.ServiceTier = &tier
+	}
+}
+
+// stripOrphanedDeferredToolFlags 修正出站工具集的声明一致性：上游（OpenAI 系 responses）要求
+// defer_loading 必须伴随 tools.tool_search 声明，而 Claude Code 的客户端侧工具搜索只发
+// defer_loading、不发服务端声明，原样转发会被上游以
+// "Deferred tools require tools.tool_search" 拒绝。无声明时剥离 defer_loading（工具立即加载）；
+// 两者共存（正常 OpenAI 工具搜索请求）时保持原样。
+func stripOrphanedDeferredToolFlags(request *schemas.BifrostResponsesRequest) {
+	if request == nil || request.Params == nil {
+		return
+	}
+	if responsesToolsDeclareToolSearch(request.Params.Tools) || !responsesToolsHaveDeferred(request.Params.Tools) {
+		return
+	}
+	clearResponsesToolDeferLoading(request.Params.Tools)
+}
+
+// responsesToolsDeclareToolSearch 判断工具集（含 namespace 子工具）是否声明了服务端 tool_search。
+func responsesToolsDeclareToolSearch(tools []schemas.ResponsesTool) bool {
+	for i := range tools {
+		if tools[i].Type == schemas.ResponsesToolTypeToolSearch {
+			return true
+		}
+		if tools[i].ResponsesToolNamespace != nil && responsesToolsDeclareToolSearch(tools[i].ResponsesToolNamespace.Tools) {
+			return true
+		}
+	}
+	return false
+}
+
+// responsesToolsHaveDeferred 判断工具集（含 namespace 子工具）是否存在生效的 defer_loading。
+func responsesToolsHaveDeferred(tools []schemas.ResponsesTool) bool {
+	for i := range tools {
+		if tools[i].DeferLoading != nil && *tools[i].DeferLoading {
+			return true
+		}
+		if tools[i].ResponsesToolNamespace != nil && responsesToolsHaveDeferred(tools[i].ResponsesToolNamespace.Tools) {
+			return true
+		}
+	}
+	return false
+}
+
+// clearResponsesToolDeferLoading 置空工具集（含 namespace 子工具）的全部 defer_loading。
+func clearResponsesToolDeferLoading(tools []schemas.ResponsesTool) {
+	for i := range tools {
+		tools[i].DeferLoading = nil
+		if tools[i].ResponsesToolNamespace != nil {
+			clearResponsesToolDeferLoading(tools[i].ResponsesToolNamespace.Tools)
+		}
 	}
 }
 

@@ -42,6 +42,23 @@ removing, or renaming a field mapping in that file.
   must be lifted into a typed request field by explicit code in the converted
   builder, or it never leaves the process.
 
+**Deferred tool flags need an upstream co-declaration.**
+
+- OpenAI-lineage responses upstreams reject `defer_loading` unless the same
+  request declares `tools.tool_search` (`Invalid Value:
+  'tools.defer_loading'. Deferred tools require tools.tool_search.`). Claude
+  Code's tool search is client-side: it sends `defer_loading:true` on MCP tools
+  plus a `DeferredToolPlaceholder` and no server-side declaration, so converted
+  routes strip the orphaned flag (`stripOrphanedDeferredToolFlags`) instead of
+  forwarding the inconsistent shape.
+- Only the orphan shape is touched: a co-declared `tool_search` keeps the flags
+  untouched, and requests without deferred tools are byte-identical.
+- Traversal recurses through `ResponsesToolNamespace.Tools`; the SDK's own
+  `keepDeferLoading` gate only visits top-level tools, so namespace children
+  leak without this pass.
+- CPA (Codex) routes are out of scope: their claude→codex translator already
+  deletes `defer_loading`.
+
 **`buildConvertedResponsesRequest` is shared by native routes.**
 
 - RouteConverted always goes through it, but `executor.go` also routes some
@@ -67,7 +84,9 @@ removing, or renaming a field mapping in that file.
 ```
 Go   buildConvertedResponsesRequest(spec execution.AttemptSpec, provider schemas.ModelProvider) (*schemas.BifrostResponsesRequest, error)
      applyConvertedFastMode(request *schemas.BifrostResponsesRequest)   // speed:"fast" → Params.ServiceTier=priority, clears ExtraParams["speed"]
+     stripOrphanedDeferredToolFlags(request *schemas.BifrostResponsesRequest) // no tool_search declared → clear every DeferLoading (namespace-recursive)
 Test internal/execution/bifrost/converted_fast_mode_test.go
+Test internal/execution/bifrost/converted_deferred_tools_test.go
 ```
 
 ### 4. Common mistakes
@@ -78,3 +97,5 @@ Test internal/execution/bifrost/converted_fast_mode_test.go
   gate — breaks DeepSeek's native Anthropic fast restoration.
 - Asserting "no `speed` in body" while extras passthrough is off — the
   assertion passes for the wrong reason.
+- Forwarding Claude Code's `defer_loading` to an OpenAI-lineage upstream — 400
+  unless `tools.tool_search` is co-declared; strip the orphaned flag instead.
