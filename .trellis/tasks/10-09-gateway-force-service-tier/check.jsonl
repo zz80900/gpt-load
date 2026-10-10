@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/10-09-gateway-force-service-tier/prd.md", "reason": "按 R1-R4 与验收清单逐条核对：fast→priority、standard 不设 tier、service_tier:auto+speed:fast 由 speed 胜出、原生路由零改动。"}
+{"file": ".trellis/tasks/10-09-gateway-force-service-tier/design.md", "reason": "核对 RouteConverted 门禁的必要性与最小性（DeepSeek native Anthropic 路由从 ExtraParams[\"speed\"] 还原 fast mode），以及断言是否打到真实上游 body。"}
+{"file": ".trellis/tasks/10-09-gateway-force-service-tier/research/probe-findings.md", "reason": "用于变异测试：关闭 extras 透传时 “speed 不泄漏” 断言必须能真的失败；出站 body 预期形态以探针输出为准。"}
+{"file": ".trellis/spec/backend/converted-route-fields.md", "reason": "本次新增的契约文档需与实现一致：签名、常见错误、测试坐标。"}

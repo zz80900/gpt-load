@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/10-09-gateway-force-service-tier/research/probe-findings.md", "reason": "三个探针实测：speed 只进 ExtraParams 不出站、service_tier:fast 被 SDK 折叠为 auto、tool_search+defer_loading 正常透传。实现与断言基准以这份为准。"}
+{"file": ".trellis/spec/backend/converted-route-fields.md", "reason": "转换路由字段语义契约：speed 是 fast 载体、ExtraParams 默认不合并、构造函数被 native 路由复用必须加 RouteConverted 门禁、断言要打真实上游 body。"}
+{"file": ".trellis/tasks/10-09-gateway-force-service-tier/design.md", "reason": "被否方案与取舍：不用 service_tier 作配置面、不开全局 extras 透传、不做 ultrafast；实现只新增一个函数加一处调用。"}
