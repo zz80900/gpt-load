@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-10-10
+- **Total Sessions**: 9
+- **Last Active**: 2026-10-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~183 | Active |
+| `journal-1.md` | ~205 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-10-15 | 同步上游 30 提交并发布 v2.0.0-zz.22 | `da224aa7`, `7f8ebd86` | `main` |
 | 8 | 2026-10-10 | 网关强制 fast mode 与 defer_loading 一致性修复 | `b84da7b1`, `e6c72b97`, `96a2bd9f` | `main` |
 | 7 | 2026-09-20 | 分组排序：未启用置后，发布 zz.11 | `5a194b16` | `main` |
 | 6 | 2026-09-20 | 私有迁移号段与上游隔离 | `8d84d30c` | `main` |

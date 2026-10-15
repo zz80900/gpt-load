@@ -181,3 +181,25 @@ modern 分组列表此前只在 priority 模式把未启用分组置后，默认
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: 同步上游 30 提交并发布 v2.0.0-zz.22
+
+**Date**: 2026-10-15
+**Task**: 同步上游 30 提交并发布 v2.0.0-zz.22
+**Branch**: `main`
+
+### Summary
+
+合并 upstream/main（30 提交、681 文件）；9 处冲突按双方各自新增解决：runtime.go 的 groupModelSync 与上游 cpaModelCatalog 并存、迁移链 0029_zz 与 0030 按字典序相邻、requestlog 字段合并、删除上游带回来的 release.yml。7 处上游测试代码由单数 Alias 适配为 fork 的 Aliases。发现并修复自发失误：初次 merge commit 漏暂存后期适配（工作区校验通过掩盖了提交内容），补 7f8ebd86 后提交层面复核。发布 v2.0.0-zz.22：Actions 曾被禁（dispatch 与 push 均失效、仅 schedule 残留，API 侧信号全为假阳性），大哥网页启用后触发成功，run 38671421401 success，latest 与 tag digest 一致，fork-ci 全绿。关闭上游同步冲突 issue #5。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da224aa7` | (see git log) |
+| `7f8ebd86` | (see git log) |
+
+### Status
+
+[OK] **Completed**
