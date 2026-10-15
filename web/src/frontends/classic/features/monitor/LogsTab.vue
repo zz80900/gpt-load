@@ -4,7 +4,6 @@ import {
   ArrowRight,
   CircleHelp,
   CornerDownRight,
-  Info,
   Layers,
   Magnet,
   Search,

@@ -342,11 +342,11 @@ func TestResponsesContinuationSeparatesStorageFromOtherResourceRequirements(t *t
 			},
 			{ConnectionType: "api_key", ID: 12, Name: "cpa", ChannelID: channel.CLIProxyAPI,
 				Params: json.RawMessage(`{"base_url":"https://cpa.example"}`), Enabled: true,
-				Models: []state.ModelConfig{{ID: "gpt-cpa", Alias: "gpt"}},
+				Models: []state.ModelConfig{{ID: "gpt-cpa", Aliases: []string{"gpt"}}},
 			},
 			{ConnectionType: "api_key", ID: 13, Name: "newapi", ChannelID: channel.NewAPI,
 				Params: json.RawMessage(`{"base_url":"https://newapi.example"}`), Enabled: true,
-				Models: []state.ModelConfig{{ID: "gpt-newapi", Alias: "gpt"}},
+				Models: []state.ModelConfig{{ID: "gpt-newapi", Aliases: []string{"gpt"}}},
 			},
 		},
 	})

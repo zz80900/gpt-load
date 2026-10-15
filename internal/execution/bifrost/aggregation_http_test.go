@@ -209,7 +209,7 @@ func newAggregationSearchGateway(t *testing.T, id channel.ID, endpoint string) (
 	input := state.CompileInput{
 		ChannelRegistry: channel.NewRegistry(),
 		Groups: []state.GroupConfig{{ID: 1, Name: "aggregation", ChannelID: id, ConnectionType: "api_key", Params: target.TargetConfig, Enabled: true,
-			Models:   []state.ModelConfig{{ID: "account1/gpt-6.1-sol", Alias: "public"}},
+			Models:   []state.ModelConfig{{ID: "account1/gpt-6.1-sol", Aliases: []string{"public"}}},
 			Settings: config.Settings{state.SettingParameterOverrides: []any{map[string]any{"set": map[string]any{"temperature": 0.25}}}},
 		}},
 		Credentials: []state.CredentialConfig{{ID: 1, GroupID: 1, Version: 1, IdentityGeneration: 1, Fingerprint: crypto.Hash(credential), Status: state.CredentialStatusActive}},

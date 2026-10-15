@@ -641,7 +641,7 @@ func TestAutoModelArrayOverrideUsesTransportLimit(t *testing.T) {
 				{ID: "only", Name: "only", Description: "All work", Model: "public", ParameterOverrides: rules},
 			}}}
 			input.AutoModel = &cfg
-			input.Groups = append(input.Groups, state.GroupConfig{ID: 99, Name: "jev", ChannelID: channel.Jev, ConnectionType: "api_key", Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "jev-latest", Alias: "jev-router"}}, Enabled: true})
+			input.Groups = append(input.Groups, state.GroupConfig{ID: 99, Name: "jev", ChannelID: channel.Jev, ConnectionType: "api_key", Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "jev-latest", Aliases: []string{"jev-router"}}}, Enabled: true})
 			if _, err := handler.manager.Publish(input); err != nil {
 				t.Fatal(err)
 			}

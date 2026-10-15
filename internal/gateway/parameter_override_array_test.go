@@ -48,7 +48,7 @@ func TestArrayParameterOverridesReachUpstreamAndStayGroupScoped(t *testing.T) {
 						_, params := testChannelConfig(t, protocol.OpenAICompletions, baseURL+"/v1")
 						return dialectGatewayGroup{
 							id: id, name: name, channelID: channelID, params: params, apiKeys: []string{"synthetic-" + name},
-							models: []state.ModelConfig{{ID: "upstream-model", Alias: "DeepSeek-V4-test"}},
+							models: []state.ModelConfig{{ID: "upstream-model", Aliases: []string{"DeepSeek-V4-test"}}},
 						}
 					}
 					rule := map[string]any{"match": test.match, "remove": []any{"/messages/*/reasoning_content"}}
@@ -123,10 +123,10 @@ func TestAutoPresetArrayRemovalsSurviveGroupRetries(t *testing.T) {
 				ID: "only", Name: "only", Description: "All work", Model: "DeepSeek-V4-test",
 				ParameterOverrides: json.RawMessage(`[{"match":{"protocol":"openai-completions","model":"DeepSeek*"},"remove":["/messages/*/reasoning_content"]}]`),
 			}}}}
-			groups := []state.GroupConfig{{ID: 3, Name: "jev", ChannelID: channel.Jev, ConnectionType: "api_key", Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "jev-latest", Alias: "jev-router"}}, Enabled: true}}
+			groups := []state.GroupConfig{{ID: 3, Name: "jev", ChannelID: channel.Jev, ConnectionType: "api_key", Params: json.RawMessage(`{}`), Models: []state.ModelConfig{{ID: "jev-latest", Aliases: []string{"jev-router"}}}, Enabled: true}}
 			for index, upstream := range []*fakeupstream.Server{first, second} {
 				_, params := testChannelConfig(t, protocol.OpenAICompletions, upstream.URL+"/v1")
-				group := state.GroupConfig{ID: uint(index + 1), Name: fmt.Sprintf("deepseek-%d", index), ChannelID: channel.DeepSeek, ConnectionType: "api_key", Params: params, Models: []state.ModelConfig{{ID: "upstream-model", Alias: "DeepSeek-V4-test"}}, Enabled: true}
+				group := state.GroupConfig{ID: uint(index + 1), Name: fmt.Sprintf("deepseek-%d", index), ChannelID: channel.DeepSeek, ConnectionType: "api_key", Params: params, Models: []state.ModelConfig{{ID: "upstream-model", Aliases: []string{"DeepSeek-V4-test"}}}, Enabled: true}
 				if index == 0 {
 					group.Settings = config.Settings{state.SettingParameterOverrides: []any{map[string]any{"remove": []any{"/messages/*/drop"}}}}
 				}
