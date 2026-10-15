@@ -1,5 +1,6 @@
 import { readConcurrency } from '@shared/concurrency'
 import { codexLiveModes, type CodexLiveMode } from '@shared/codex-live'
+import { readErrorRules, type ErrorRule } from '@shared/error-rules'
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/vue-query'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
@@ -62,6 +63,7 @@ const groupSummaryFields = [
   'model_count',
 ] as const
 const groupSettingsFields = [
+  'default_error_rules',
   'priority',
   'name',
   'price_multiplier',
@@ -117,6 +119,7 @@ const groupCollectionStatuses = ['available', 'unavailable', 'disabled'] as cons
 const groupUnavailableReasons = ['no_available_credentials', 'no_models'] as const
 const connectionTypes = ['api_key', 'subscription'] as const
 const runtimeSettingFields = [
+  'error_rules',
   'concurrency_limit',
   'first_byte_timeout',
   'request_timeout',
@@ -136,6 +139,7 @@ export interface HeaderRulesDto {
 }
 
 export interface GroupRuntimeConfigDto {
+  error_rules?: ErrorRule[]
   first_byte_timeout?: number
   request_timeout?: number
   stream_idle_timeout?: number
@@ -150,6 +154,7 @@ export interface GroupRuntimeConfigDto {
 }
 
 export interface GroupEffectiveConfigDto {
+  error_rules: ErrorRule[]
   first_byte_timeout: number
   request_timeout: number
   stream_idle_timeout: number
@@ -370,6 +375,8 @@ function projectRuntimeConfig(
   const record = projectRecord(value)
   assertNoSecretLikeFields(record, complete ? runtimeSettingFields : groupRuntimeSettingFields)
   const result: GroupRuntimeConfigDto = {}
+  if (complete || Object.prototype.hasOwnProperty.call(record, 'error_rules'))
+    result.error_rules = readErrorRules(record.error_rules ?? [])
 
   for (const field of ['first_byte_timeout', 'request_timeout', 'stream_idle_timeout'] as const) {
     if (complete || Object.prototype.hasOwnProperty.call(record, field)) {
@@ -435,6 +442,7 @@ export function projectGroupSettings(value: unknown): GroupSettingsDto {
   const record = projectRecord(value)
   assertNoSecretLikeFields(record, groupSettingsFields)
   return {
+    default_error_rules: readErrorRules(record.default_error_rules ?? []),
     priority: projectSafeInteger(record.priority, { minimum: -2147483648, maximum: 2147483647 }),
     name: projectNonBlankString(record.name),
     channel_id: projectChannelID(record.channel_id),

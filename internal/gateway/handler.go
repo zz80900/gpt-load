@@ -24,6 +24,7 @@ import (
 	"gpt-load/internal/execution"
 	"gpt-load/internal/health"
 	"gpt-load/internal/httplifecycle"
+	"gpt-load/internal/parameteroverride"
 	"gpt-load/internal/platform/config"
 	"gpt-load/internal/platform/contentcoding"
 	"gpt-load/internal/platform/encryption"
@@ -86,6 +87,7 @@ type runtimeCredentialRegistry interface {
 	SetCooldownWithChange(credentialID uint, until time.Time) (exists bool, changed bool)
 	SetCooldownWithChangeIfVersion(credentialID uint, expectedVersion uint64, until time.Time) (matched bool, changed bool)
 	SetModelCooldown(state.CredentialRef, string, time.Time, time.Time) (bool, bool)
+	SetQuotaCooldown(state.CredentialRef, string, time.Time, time.Time) (bool, bool)
 	IncrFailure(credentialID uint) (int, bool)
 	SetBlacklistedWithChange(credentialID uint) (exists bool, changed bool)
 	ClearFailure(credentialID uint) bool
@@ -328,7 +330,12 @@ func (handler *Handler) applyDecisionEffectWithBlacklistPolicy(
 	switch decision.Effect {
 	case health.EffectCooldownModel:
 		handler.mutateCredentialForTarget(ref, func() {
-			accepted, changed := handler.registry.SetModelCooldown(ref, model, decision.CooldownUntil, attemptNow)
+			var accepted, changed bool
+			if decision.QuotaCooldown && model != "" {
+				accepted, changed = handler.registry.SetQuotaCooldown(ref, model, decision.CooldownUntil, attemptNow)
+			} else {
+				accepted, changed = handler.registry.SetModelCooldown(ref, model, decision.CooldownUntil, attemptNow)
+			}
 			if accepted {
 				handler.stats.RecordProblem(credentialID, decision.Category, statusCode, attemptNow)
 			}
@@ -342,7 +349,9 @@ func (handler *Handler) applyDecisionEffectWithBlacklistPolicy(
 		handler.mutateCredentialForTarget(ref, func() {
 			until := decision.CooldownUntil
 			exists, changed := false, false
-			if credentialVersion == 0 {
+			if decision.QuotaCooldown && credentialVersion == 0 {
+				exists, changed = handler.registry.SetQuotaCooldown(ref, "", until, attemptNow)
+			} else if credentialVersion == 0 {
 				exists, changed = handler.registry.SetCooldownWithChange(credentialID, until)
 			} else {
 				exists, changed = handler.registry.SetCooldownWithChangeIfVersion(
@@ -613,6 +622,7 @@ func (handler *Handler) Handle(ginContext *gin.Context) {
 		handler.completeReason(ginContext, recorder, reasonInvalidProtocolRequest)
 		return
 	}
+	recorder.recordRequestBody(accessKey, body)
 	requestHeaders := ginContext.Request.Header.Clone()
 	platformheader.StripRepresentationMetadata(requestHeaders)
 	parsed := &dialect.ParsedRequest{
@@ -944,6 +954,7 @@ func (handler *Handler) executeAttempts(
 	authRefreshReplayUsed := false
 	type preparedRequest struct {
 		configuredParameters  []string
+		removedParameterPaths [][]string
 		request               *dialect.ParsedRequest
 		observations          dialect.RequestMetadata
 		observationsAvailable bool
@@ -963,6 +974,9 @@ func (handler *Handler) executeAttempts(
 		prepared = preparedRequest{
 			request: parsed, observations: originalMetadata, observationsAvailable: true,
 		}
+		if recorder.autoDecision != nil {
+			prepared.removedParameterPaths = append([][]string(nil), recorder.autoDecision.RemovedParameterPaths...)
+		}
 		defer func() {
 			if prepared.err == nil {
 				prepared.request, prepared.err = redactOutboundRequest(snapshot.RequestRedaction, selectedDialect.Protocol(), prepared.request, redactionCipher)
@@ -976,11 +990,12 @@ func (handler *Handler) executeAttempts(
 		if recorder.autoDecision != nil {
 			routeModel = recorder.autoDecision.Selection.TargetModel
 		}
-		body, applied, err := selection.Group.ParameterOverrides.Apply(
+		body, applied, err := selection.Group.ParameterOverrides.ApplyWithLimit(
 			selectedDialect.Protocol(),
 			originalMetadata.Operation,
 			routeModel,
 			parsed.Body,
+			maxRequestBodyBytes,
 		)
 		if err != nil {
 			prepared.err = err
@@ -992,6 +1007,8 @@ func (handler *Handler) executeAttempts(
 			return prepared
 		}
 		prepared.configuredParameters = selection.Group.ParameterOverrides.ConfiguredFields(selectedDialect.Protocol(), originalMetadata.Operation, routeModel)
+		prepared.removedParameterPaths = append(prepared.removedParameterPaths,
+			selection.Group.ParameterOverrides.RemovedPaths(selectedDialect.Protocol(), originalMetadata.Operation, routeModel)...)
 		if int64(len(body)) > maxRequestBodyBytes {
 			prepared.err = errRequestTooLarge
 			cachedPrepared = &prepared
@@ -1031,6 +1048,7 @@ func (handler *Handler) executeAttempts(
 			method = parsed.Method
 		}
 		return health.DecisionContext{
+			ErrorRules:               selection.Group.ErrorRules,
 			DefaultRateLimitCooldown: defaultRateLimitCooldown,
 			CredentialRefreshable:    credentialRefreshable,
 			Method:                   method,
@@ -1154,7 +1172,7 @@ func (handler *Handler) executeAttempts(
 				handler.completeReason(ginContext, recorder, reasonRedactionFailed)
 				return
 			}
-			if errors.Is(prepared.err, errRequestTooLarge) {
+			if errors.Is(prepared.err, errRequestTooLarge) || errors.Is(prepared.err, parameteroverride.ErrBodyTooLarge) {
 				if parameterOverrideFailure == nil {
 					parameterOverrideFailure = &reasonRequestTooLarge
 				}
@@ -1306,8 +1324,9 @@ func (handler *Handler) executeAttempts(
 			restoreCipher = nil
 		}
 		input := ForwardInput{
-			ConfiguredParameters: prepared.configuredParameters,
-			Dialect:              selectedDialect, ObserveUsage: attemptObservations.ObserveUsage,
+			ConfiguredParameters:  prepared.configuredParameters,
+			RemovedParameterPaths: prepared.removedParameterPaths,
+			Dialect:               selectedDialect, ObserveUsage: attemptObservations.ObserveUsage,
 			RedactionCipher: restoreCipher,
 			Group:           selection.Group, APIKey: normalizedCredential.apiKey,
 			CredentialSecrets: normalizedCredential.secrets, Request: prepared.request,

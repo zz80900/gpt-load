@@ -1331,6 +1331,7 @@ onBeforeUnmount(() => {
             v-model="draft.credentials"
             :channel="selectedChannel"
             :disabled="payloadLocked"
+            show-partner-signup
             hide-header
             compact
           />
