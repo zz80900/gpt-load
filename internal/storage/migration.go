@@ -129,6 +129,7 @@ var migrations = []migration{
 	// upstream ledger stays a prefix of this registry. See migrations/doc.go.
 	{ID: migrationfiles.ID0029ZZ, Up: migrationfiles.Up0029ZZ, Validate: migrationfiles.Validate0029ZZ, ValidateRecoverable: migrationfiles.ValidateRecoverable0029ZZ},
 	{ID: migrationfiles.ID0030, Up: migrationfiles.Up0030, Validate: migrationfiles.Validate0030, ValidateRecoverable: migrationfiles.ValidateRecoverable0030},
+	{ID: migrationfiles.ID0031, Up: migrationfiles.Up0031, Validate: migrationfiles.Validate0031, ValidateRecoverable: migrationfiles.ValidateRecoverable0031},
 }
 
 func applyMigrations(db *gorm.DB) error {

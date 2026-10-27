@@ -102,6 +102,11 @@ func ExternalModelNames(model ModelConfig) []string {
 	return names
 }
 
+// ExternalName 是客户端可见、访问密钥模型过滤使用的模型名。
+func (model ModelConfig) ExternalName() string {
+	return externalModelName(model)
+}
+
 // externalModelName 返回模型的首选对外名：即 ExternalModelNames 的首项（上游 ID）。
 // fork 的模型可持多个别名，需要匹配「任一对外名」的调用点应改用
 // slices.Contains(ExternalModelNames(model), name)，而不是与单个名字比较。

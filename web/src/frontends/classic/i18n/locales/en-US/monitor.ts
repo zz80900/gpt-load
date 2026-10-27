@@ -1070,6 +1070,7 @@ export default {
         identity: 'Pricing identity',
         historicalSchema1: 'Historical scope',
         historicalSchema2: 'Historical global price',
+        advisor: 'Advisor ({model})',
       },
       pricingMode: {
         fastLabel: 'Fast mode pricing',

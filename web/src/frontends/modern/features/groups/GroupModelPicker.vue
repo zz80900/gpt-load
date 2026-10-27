@@ -524,6 +524,9 @@ useLoadingActivity(() => filtering.value || props.loading)
   color: var(--modern-muted);
   font-size: var(--modern-font-size-secondary);
 }
+.modern-create-model-field {
+  display: contents;
+}
 .modern-create-models--list .modern-create-model-labels {
   border-bottom: var(--modern-line-width) solid var(--modern-border);
 }
@@ -537,7 +540,9 @@ useLoadingActivity(() => filtering.value || props.loading)
   row-gap: var(--modern-space-1-5);
 }
 @media (max-width: 760px) {
-  .modern-create-model-labels,
+  .modern-create-model-labels {
+    display: none;
+  }
   .modern-create-model-row {
     grid-template-columns:
       minmax(0, 1.1fr) minmax(0, 1.4fr) max-content

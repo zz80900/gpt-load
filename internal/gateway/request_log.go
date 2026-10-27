@@ -81,6 +81,7 @@ type requestRecorder struct {
 	anthropicBetas       []string
 	attempts             []telemetry.Attempt
 	attemptPricing       []frozenAttemptPricing
+	attemptUsage         []usage.Result
 	pendingPricing       frozenAttemptPricing
 	pricingPending       bool
 	outcome              requestOutcome
@@ -456,6 +457,7 @@ func (recorder *requestRecorder) appendDecisionAttempt(
 		attempt.ErrorSummary = fixedErrorSummary(attempt.ErrorCode)
 	}
 	recorder.attempts = append(recorder.attempts, attempt)
+	recorder.attemptUsage = append(recorder.attemptUsage, result.Usage)
 	frozen := frozenAttemptPricing{}
 	if recorder.pricingPending {
 		frozen = recorder.pendingPricing
@@ -561,7 +563,9 @@ func (recorder *requestRecorder) completeResponse(
 		status: telemetry.RequestStatusError, statusCode: result.StatusCode,
 		errorCode: code, errorSummary: summary, upstreamModel: upstreamModel,
 	}
-	recorder.bindUsage(attemptIndex, result.Usage, false)
+	// 后续上游调用失败时，执行层仍可能报告此前已消耗的用量。
+	usageReported := result.Usage.State == usage.StateComplete || result.Usage.State == usage.StatePartial
+	recorder.bindUsage(attemptIndex, result.Usage, usageReported)
 }
 
 func (recorder *requestRecorder) completeProviderError(
@@ -686,6 +690,19 @@ func effectivePricingMode(requestedMode pricing.Mode) pricing.Mode {
 	return pricing.ModeStandard
 }
 
+func (recorder *requestRecorder) bindFailedAttemptUsage(attemptIndex int) {
+	if recorder == nil {
+		return
+	}
+	result := usage.Result{}
+	if attemptIndex >= 0 && attemptIndex < len(recorder.attemptUsage) {
+		result = recorder.attemptUsage[attemptIndex]
+	}
+	// 失败结果也可能包含已消耗用量，按选中的尝试及其冻结价格归属。
+	reported := result.State == usage.StateComplete || result.State == usage.StatePartial
+	recorder.bindUsage(attemptIndex, result, reported)
+}
+
 func (recorder *requestRecorder) completeTransport(
 	value reason,
 	upstreamModel string,
@@ -704,7 +721,7 @@ func (recorder *requestRecorder) completeTransport(
 		status: telemetry.RequestStatusError, statusCode: value.Status,
 		errorCode: value.Code, errorSummary: summary, upstreamModel: upstreamModel,
 	}
-	recorder.bindUsage(attemptIndex, usage.Result{}, false)
+	recorder.bindFailedAttemptUsage(attemptIndex)
 }
 
 func (recorder *requestRecorder) completeCanceled(
@@ -729,7 +746,7 @@ func (recorder *requestRecorder) completeCanceled(
 		errorCode: code, errorSummary: fixedErrorSummary(code),
 		upstreamModel: upstreamModel,
 	}
-	recorder.bindUsage(attemptIndex, usage.Result{}, false)
+	recorder.bindFailedAttemptUsage(attemptIndex)
 }
 
 func (recorder *requestRecorder) completeDownstreamWrite(status int) {
@@ -815,6 +832,8 @@ func upstreamErrorCode(result UpstreamResult, category health.FailureCategory) s
 	switch {
 	case errors.Is(result.Err, context.Canceled):
 		return "client_canceled"
+	case isConversionUnsupportedResult(result):
+		return reasonProtocolConversionUnsupported.Code
 	case errors.Is(result.Err, ErrUpstreamProtocol):
 		return "upstream_protocol_error"
 	case isTimeoutError(result.Err):

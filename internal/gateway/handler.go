@@ -19,6 +19,7 @@ import (
 	"gpt-load/internal/automodel"
 	"gpt-load/internal/catalog"
 	"gpt-load/internal/channel"
+	"gpt-load/internal/codexrecovery"
 	"gpt-load/internal/connection"
 	"gpt-load/internal/dialect"
 	"gpt-load/internal/execution"
@@ -43,7 +44,6 @@ import (
 )
 
 const (
-	maxRequestBodyBytes    = int64(128 << 20)
 	maxDataPlaneModelBytes = 255
 	fixedCooldown          = time.Minute
 	debugHeaderGroup       = "X-GPTLoad-Group"
@@ -117,11 +117,13 @@ type Handler struct {
 	now                 func() time.Time
 	writeTimeout        time.Duration
 	modelListLimit      int64
+	requestBodyLimit    int64
 	logger              *logrus.Logger
 	authFailureEvents   *utils.RateLimitedEventCounter
 	routeNotFoundEvents *utils.RateLimitedEventCounter
 	lifecycle           *httplifecycle.Coordinator
 	affinityCache       *affinity.Cache
+	invalidLineage      *codexrecovery.InvalidLineage
 	responseBindings    *state.ResponseBindings
 	websocketLimits     websocketLimits
 	websocketBudget     websocketBudget
@@ -183,6 +185,7 @@ func NewHandler(
 		forwarder: forwarder, dialects: dialects, stats: stats, mutations: mutations,
 		limiter: limiter, requestLogSink: requestLogSink, priceTables: priceTables,
 		affinityCache:    affinity.NewCache(),
+		invalidLineage:   codexrecovery.NewInvalidLineage(),
 		responseBindings: state.NewResponseBindings(),
 		websocketLimits:  defaultWebsocketLimits(),
 		liveSessions:     newLiveSessions(),
@@ -603,8 +606,8 @@ func (handler *Handler) Handle(ginContext *gin.Context) {
 	body, err := readDecodedRequestBody(
 		ginContext.Request,
 		encoding,
-		maxRequestBodyBytes,
-		maxRequestBodyBytes,
+		handler.RequestBodyLimit(),
+		handler.RequestBodyLimit(),
 	)
 	if err != nil {
 		if ginContext.Request.Context().Err() != nil {
@@ -690,6 +693,7 @@ func (handler *Handler) Handle(ginContext *gin.Context) {
 		RouteRequirement:         metadata.RouteRequirement,
 		ResponsesStorePreference: metadata.ResponsesStorePreference,
 		ExternalModel:            metadata.Model,
+		AdvisorModels:            metadata.AdvisorModels,
 		AccessKey:                accessKey,
 	}
 	candidateGroupIDs := scheduler.CandidateGroupIDsForQuery(snapshot, query)
@@ -943,6 +947,7 @@ func (handler *Handler) executeAttempts(
 	var lastConversion *deferredAttempt
 	var lastProviderError *deferredAttempt
 	var lastEmptyResponse *deferredAttempt
+	var recoveryRejection *deferredAttempt
 	lastAttemptIndex := -1
 	attemptSequence := 0
 	forwardAttempts := 0
@@ -952,6 +957,12 @@ func (handler *Handler) executeAttempts(
 	}
 	var refreshRetry *credentialRefreshRetry
 	authRefreshReplayUsed := false
+	// encryptedRetry pins one same-credential replay with the rejected
+	// encrypted continuation state stripped. It is used at most once per request
+	// and counts toward the retry budget: the opaque state is account-bound and
+	// does not change between attempts.
+	var encryptedRetry *encryptedContentRecoveryRetry
+	encryptedReplayUsed := false
 	type preparedRequest struct {
 		configuredParameters  []string
 		removedParameterPaths [][]string
@@ -979,7 +990,7 @@ func (handler *Handler) executeAttempts(
 		}
 		defer func() {
 			if prepared.err == nil {
-				prepared.request, prepared.err = redactOutboundRequest(snapshot.RequestRedaction, selectedDialect.Protocol(), prepared.request, redactionCipher)
+				prepared.request, prepared.err = redactOutboundRequest(snapshot.RequestRedaction, selectedDialect.Protocol(), prepared.request, handler.RequestBodyLimit(), redactionCipher)
 			}
 			cachedPrepared = &prepared
 		}()
@@ -995,7 +1006,7 @@ func (handler *Handler) executeAttempts(
 			originalMetadata.Operation,
 			routeModel,
 			parsed.Body,
-			maxRequestBodyBytes,
+			handler.RequestBodyLimit(),
 		)
 		if err != nil {
 			prepared.err = err
@@ -1009,7 +1020,7 @@ func (handler *Handler) executeAttempts(
 		prepared.configuredParameters = selection.Group.ParameterOverrides.ConfiguredFields(selectedDialect.Protocol(), originalMetadata.Operation, routeModel)
 		prepared.removedParameterPaths = append(prepared.removedParameterPaths,
 			selection.Group.ParameterOverrides.RemovedPaths(selectedDialect.Protocol(), originalMetadata.Operation, routeModel)...)
-		if int64(len(body)) > maxRequestBodyBytes {
+		if int64(len(body)) > handler.RequestBodyLimit() {
 			prepared.err = errRequestTooLarge
 			cachedPrepared = &prepared
 			return prepared
@@ -1036,6 +1047,26 @@ func (handler *Handler) executeAttempts(
 		cachedPrepared = &prepared
 		return prepared
 	}
+	replacePreparedBody := func(prepared preparedRequest, body []byte) preparedRequest {
+		prepared.request = withRequestBody(prepared.request, body)
+		prepared.observations = originalMetadata
+		prepared.observationsAvailable = false
+		if metadata, inspectErr := selectedDialect.InspectRequest(prepared.request); inspectErr == nil {
+			prepared.observations = dialect.RequestMetadata{
+				ObserveUsage:     originalMetadata.ObserveUsage,
+				PricingMode:      metadata.PricingMode,
+				UsageDiagnostics: metadata.UsageDiagnostics,
+				Reasoning:        metadata.Reasoning,
+			}
+			prepared.observationsAvailable = true
+		}
+		return prepared
+	}
+	invalidLineageSession := handler.invalidLineageKey(
+		recorder.accessKeyID,
+		selectedDialect.Protocol(),
+		originalMetadata,
+	)
 	decisionContextForSelection := func(selection scheduler.Selection) health.DecisionContext {
 		defaultRateLimitCooldown := fixedCooldown
 		credentialRefreshable := false
@@ -1129,7 +1160,24 @@ func (handler *Handler) executeAttempts(
 		forceCredentialRefresh := false
 		var selection scheduler.Selection
 		var ref state.CredentialRef
-		if refreshRetry != nil {
+		if encryptedRetry != nil {
+			// Replay the same credential with the rejected encrypted state
+			// stripped. Pinning the credential is required: the sanitized
+			// body no longer needs the authoring account, but keeping it
+			// avoids re-routing a continuation turn mid-flight.
+			selection = encryptedRetry.selection
+			currentRef, exists := handler.registry.CredentialRef(selection.CredentialID)
+			if !exists || currentRef.GroupID != selection.GroupID ||
+				currentRef.IdentityGeneration != encryptedRetry.ref.IdentityGeneration {
+				encryptedRetry = nil
+				continue
+			}
+			ref = currentRef
+			if !iterator.ChargeReplay(selection, ref) {
+				encryptedRetry = nil
+				continue
+			}
+		} else if refreshRetry != nil {
 			selection = refreshRetry.selection
 			currentRef, exists := handler.registry.CredentialRef(selection.CredentialID)
 			if !exists || currentRef.GroupID != selection.GroupID ||
@@ -1167,6 +1215,58 @@ func (handler *Handler) executeAttempts(
 		}
 		recorder.startTiming()
 		prepared := prepareRequest(selection)
+		if encryptedRetry != nil || encryptedReplayUsed {
+			// Keep the recovery active for later candidate failover. Rebuild from
+			// that candidate's prepared body so another group's model/parameter
+			// overrides are not inherited from the failed candidate.
+			var recoveryBody []byte
+			if encryptedRetry != nil {
+				recoveryBody = encryptedRetry.body
+				encryptedRetry = nil
+			} else if cleaned, _, ok := codexrecovery.Sanitize(prepared.request.Body); ok {
+				recoveryBody = cleaned
+			}
+			if recoveryBody != nil {
+				prepared = replacePreparedBody(prepared, recoveryBody)
+			}
+		}
+		if encryptedRetry == nil && !encryptedReplayUsed && invalidLineageSession != "" && handler.invalidLineage != nil {
+			lineageKey := codexrecovery.InvalidLineageKey(ref.ID, ref.IdentityGeneration, invalidLineageSession)
+			if rejected := handler.invalidLineage.Lookup(lineageKey, handler.invalidLineageNow()); len(rejected) > 0 {
+				if stripped, removals, ok := codexrecovery.StripEncryptedContentDigests(prepared.request.Body, rejected); ok {
+					prepared = replacePreparedBody(prepared, stripped)
+					utils.LogPlaneBestEffort(
+						handler.logger,
+						logrus.InfoLevel,
+						utils.LogPlaneData,
+						logrus.Fields{
+							"event":         "codex_encrypted_content_lineage_strip",
+							"credential_id": selection.CredentialID,
+							"group_id":      selection.GroupID,
+							"removed":       removals.Total(),
+						},
+						"Removed encrypted continuation state already rejected by this session's upstream",
+					)
+				}
+			}
+			if rejected := handler.invalidLineage.LookupItemIDs(lineageKey, handler.invalidLineageNow()); len(rejected) > 0 {
+				if stripped, removals, ok := codexrecovery.StripHistoryItemIDs(prepared.request.Body, rejected); ok {
+					prepared = replacePreparedBody(prepared, stripped)
+					utils.LogPlaneBestEffort(
+						handler.logger,
+						logrus.InfoLevel,
+						utils.LogPlaneData,
+						logrus.Fields{
+							"event":         "codex_response_item_id_lineage_strip",
+							"credential_id": selection.CredentialID,
+							"group_id":      selection.GroupID,
+							"removed":       removals.Total(),
+						},
+						"Removed history item IDs already rejected by this session's upstream",
+					)
+				}
+			}
+		}
 		if prepared.err != nil {
 			if errors.Is(prepared.err, requestredact.ErrContent) {
 				handler.completeReason(ginContext, recorder, reasonRedactionFailed)
@@ -1306,6 +1406,7 @@ func (handler *Handler) executeAttempts(
 		defer releaseGroup()
 		attemptSequence++
 		forwardAttempts++
+		recoveryRejection = nil
 		if attemptSequence == 1 && (originalMetadata.PreviousResponseID != "" ||
 			(requestAffinity.preferredCredentialID != 0 && selection.CredentialID == requestAffinity.preferredCredentialID)) {
 			kind := requestAffinity.kind
@@ -1491,6 +1592,120 @@ func (handler *Handler) executeAttempts(
 		if decision.Effect == health.EffectSkipGroup {
 			iterator.SkipGroup(selection.GroupID)
 		}
+		// Recover rejected continuation state before ordinary account failover:
+		// rebuild inline history without upstream-bound IDs/encrypted content
+		// and replay once on the current credential. The replay runs after the
+		// group's error rules and counts toward the retry budget. Later candidate
+		// retries keep using recovered history rather than restoring the rejected state.
+		if signal := encryptedContentRecoverySignal(result); signal != "" &&
+			encryptedContentRecoveryApplies(selectedDialect.Protocol(), result.Committed) {
+			if encryptedReplayUsed {
+				// The one-time cleanup replay still hit the same rejection.
+				// Retrying again is deterministic, so hand back an explicit
+				// terminal instead of a retryable failure.
+				recorder.completeProviderError(
+					result,
+					optionalModelValue(selection.UpstreamModelID),
+					recordedAttempt,
+				)
+				handler.completeReason(ginContext, recorder, reasonEncryptedContentRecoveryExhausted)
+				return
+			}
+			if handler.invalidLineage != nil && invalidLineageSession != "" &&
+				codexrecovery.InvalidEncryptedContentSignal(signal) {
+				digests := codexrecovery.EncryptedContentDigests(prepared.request.Body)
+				if added := handler.invalidLineage.Mark(
+					codexrecovery.InvalidLineageKey(ref.ID, ref.IdentityGeneration, invalidLineageSession),
+					digests,
+					handler.invalidLineageNow(),
+				); added > 0 {
+					utils.LogPlaneBestEffort(
+						handler.logger,
+						logrus.InfoLevel,
+						utils.LogPlaneData,
+						logrus.Fields{
+							"event":         "codex_encrypted_content_lineage_mark",
+							"credential_id": selection.CredentialID,
+							"group_id":      selection.GroupID,
+							"digests":       added,
+						},
+						"Remembered rejected encrypted continuation state for this client session",
+					)
+				}
+			}
+			if handler.invalidLineage != nil && invalidLineageSession != "" &&
+				codexrecovery.InvalidItemIDSignal(signal) {
+				// 条目 ID 报错只说明 ID 不可用，不能据此判定同一请求里的密文失效。
+				itemIDsAdded := handler.invalidLineage.MarkItemIDs(
+					codexrecovery.InvalidLineageKey(ref.ID, ref.IdentityGeneration, invalidLineageSession),
+					codexrecovery.HistoryItemIDs(prepared.request.Body),
+					handler.invalidLineageNow(),
+				)
+				if itemIDsAdded > 0 {
+					utils.LogPlaneBestEffort(
+						handler.logger,
+						logrus.InfoLevel,
+						utils.LogPlaneData,
+						logrus.Fields{
+							"event":         "codex_response_item_id_lineage_mark",
+							"credential_id": selection.CredentialID,
+							"group_id":      selection.GroupID,
+							"item_ids":      itemIDsAdded,
+						},
+						"Remembered rejected history item IDs for this client session",
+					)
+				}
+			}
+			// 错误规则不允许重试、要求跳过分组或重试次数已用完时不重放，沿用普通失败处理；
+			// 拒绝记录已写入，下一次请求发送前仍会清理。
+			if decision.Retry != health.RetryNone && decision.Effect != health.EffectSkipGroup &&
+				forwardAttempts < forwardAttemptLimit {
+				if sanitized, removals, ok := codexrecovery.Sanitize(prepared.request.Body); ok {
+					utils.LogPlaneBestEffort(
+						handler.logger,
+						logrus.InfoLevel,
+						utils.LogPlaneData,
+						logrus.Fields{
+							"event":         "codex_encrypted_content_recovery_retry",
+							"signal":        string(signal),
+							"credential_id": selection.CredentialID,
+							"group_id":      selection.GroupID,
+							"removed":       removals.Total(),
+							"history_ids":   removals.HistoryItemID,
+						},
+						"Replaying the request on the same credential with rejected continuation state removed",
+					)
+					encryptedRetry = &encryptedContentRecoveryRetry{
+						selection: selection,
+						ref:       ref,
+						body:      sanitized,
+					}
+					encryptedReplayUsed = true
+					// Keep the rejection only until another forwarding attempt starts.
+					// It is the fallback if the recovery replay cannot execute.
+					recoveryRejection = &deferredAttempt{
+						result: result, decision: decision,
+						upstreamModel: optionalModelValue(selection.UpstreamModelID),
+						attemptIndex:  recordedAttempt,
+					}
+					recorder.retryIfAnotherForward(recordedAttempt)
+					continue
+				}
+				utils.LogPlaneBestEffort(
+					handler.logger,
+					logrus.WarnLevel,
+					utils.LogPlaneData,
+					logrus.Fields{
+						"event":         "codex_encrypted_content_recovery_skipped",
+						"signal":        string(signal),
+						"credential_id": selection.CredentialID,
+						"group_id":      selection.GroupID,
+						"reason":        "no_removable_encrypted_content",
+					},
+					"Continuation state was rejected but no safely removable state was found",
+				)
+			}
+		}
 		if result.StatusCode >= http.StatusContinue && result.StatusCode < http.StatusOK {
 			recorder.completeTransport(
 				reasonUpstreamProtocol,
@@ -1591,6 +1806,16 @@ func (handler *Handler) executeAttempts(
 		return
 	}
 
+	if recoveryRejection != nil {
+		switch {
+		case recoveryRejection.result.ProviderErrorBeforeCommit:
+			lastProviderError = recoveryRejection
+		case recoveryRejection.result.HasResponse():
+			lastResponse = recoveryRejection
+		default:
+			lastTransport = recoveryRejection
+		}
+	}
 	if lastEmptyResponse != nil {
 		handler.completeEmptyResponse(
 			ginContext,
@@ -1655,6 +1880,10 @@ func (handler *Handler) executeAttempts(
 		handler.completeReason(ginContext, recorder, reasonModelRequiredByFilter)
 		return
 	}
+	if iterator.StaticReason() == scheduler.ReasonAdvisorModelUnavailable {
+		handler.completeReason(ginContext, recorder, reasonAdvisorModelUnavailable)
+		return
+	}
 	if parameterOverrideFailure != nil && lastAttemptIndex < 0 {
 		handler.completeReason(ginContext, recorder, *parameterOverrideFailure)
 		return
@@ -1702,7 +1931,7 @@ func transportReason(result UpstreamResult) reason {
 }
 
 func isConversionUnsupportedResult(result UpstreamResult) bool {
-	return result.DispatchState == execution.DispatchNotSent && result.ExecutionError != nil &&
+	return result.ExecutionError != nil &&
 		result.ExecutionError.Kind == execution.ErrorKindConversionUnsupported
 }
 

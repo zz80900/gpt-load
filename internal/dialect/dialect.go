@@ -33,6 +33,8 @@ type RequestMetadata struct {
 	Reasoning                reasoning.Config
 	// AnthropicBetas 是客户端声明的 beta 能力，仅 Anthropic 协议填充；其余协议留空。
 	AnthropicBetas []string
+	// AdvisorModels 是请求里 advisor 工具声明的模型，上游会按这些模型执行并计费。
+	AdvisorModels []string
 }
 
 type Dialect interface {
