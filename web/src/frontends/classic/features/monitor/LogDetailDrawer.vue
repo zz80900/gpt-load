@@ -476,6 +476,7 @@ function decisionRuleLabel(ruleID: string): string {
             {{ log.request_id }}
           </OverflowTooltip>
           <CopyButton
+            compact
             :value="log.request_id"
             :label="t('monitor.logs.drawer.copyRequestId')"
             :success-label="t('common.copied')"
@@ -489,9 +490,10 @@ function decisionRuleLabel(ruleID: string): string {
         <dl class="log-detail__grid">
           <div>
             <dt>{{ t('monitor.logs.columns.clientIP') }}</dt>
-            <dd>
+            <dd class="log-detail__ip">
               <template v-if="log.client_ip">
                 <AppButton
+                  class="log-detail__ip-filter"
                   variant="link"
                   size="inline"
                   :aria-label="t('monitor.logs.filterIP', { value: log.client_ip })"
@@ -500,6 +502,7 @@ function decisionRuleLabel(ruleID: string): string {
                   {{ log.client_ip }}
                 </AppButton>
                 <CopyButton
+                  compact
                   :value="log.client_ip"
                   :label="t('monitor.logs.copyIP')"
                   :success-label="t('common.copied')"
@@ -1138,10 +1141,17 @@ function decisionRuleLabel(ruleID: string): string {
   padding: 0;
 }
 
-.log-detail__request-id :deep(.copy-control button) {
-  width: 28px;
-  height: 28px;
-  border-color: transparent;
+.log-detail__ip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.log-detail__ip-filter {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: left;
 }
 
 .log-detail__section {
