@@ -114,7 +114,7 @@ func TestAudioSpeechGatewayKeepsEachChannelNativeFormat(t *testing.T) {
 				ChannelRegistry: channel.NewRegistry(),
 				Groups: []state.GroupConfig{{
 					ConnectionType: "api_key", ID: 1, Name: "speech", ChannelID: test.channelID,
-					Params: params, Models: []state.ModelConfig{{ID: test.upstreamModel, Alias: "public"}}, Enabled: true,
+					Params: params, Models: []state.ModelConfig{{ID: test.upstreamModel, Aliases: []string{"public"}}}, Enabled: true,
 				}},
 				Credentials: []state.CredentialConfig{testCredentialConfig(1, 1)},
 				AccessKeys: []state.AccessKeyConfig{{
