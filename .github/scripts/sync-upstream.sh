@@ -32,15 +32,23 @@ fi
 echo "本地 $before -> 上游 $upstream_head"
 
 if ! git merge "upstream/${branch}" --no-edit; then
-  {
-    echo "outcome=conflicted"
-    echo "files<<__SYNC_CONFLICT_EOF__"
-    git diff --name-only --diff-filter=U
-    echo "__SYNC_CONFLICT_EOF__"
-  } >> "$output"
-  # 让工作区回到合并前的干净状态，避免后续步骤在冲突态下操作。
-  git merge --abort
-  exit 0
+  conflicts="$(git diff --name-only --diff-filter=U)"
+  # release.yml 属于上游发布渠道，本 fork 一直删除它；上游每次改动该文件都会产生
+  # modify/delete 冲突。这是已知且可自动处理的场景，接受删除后继续合并。
+  if [ "$conflicts" = ".github/workflows/release.yml" ]; then
+    git rm -q .github/workflows/release.yml
+    git commit --no-edit
+  else
+    {
+      echo "outcome=conflicted"
+      echo "files<<__SYNC_CONFLICT_EOF__"
+      printf '%s\n' "$conflicts"
+      echo "__SYNC_CONFLICT_EOF__"
+    } >> "$output"
+    # 让工作区回到合并前的干净状态，避免后续步骤在冲突态下操作。
+    git merge --abort
+    exit 0
+  fi
 fi
 
 after="$(git rev-parse HEAD)"
