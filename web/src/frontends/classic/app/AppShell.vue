@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { isNavigationFailure, RouterLink, useRoute, useRouter } from 'vue-router'
+import { useDemoCountdown } from '@shared/frontend/demo'
 
 import {
   accessKeysLocation,
@@ -25,6 +26,7 @@ import PreferencesControl from '@/features/preferences/PreferencesControl.vue'
 import { useTheme } from '@/features/preferences/theme'
 
 const session = useAuthSession()
+const demoCountdown = useDemoCountdown()
 const recovery = useImportRecovery()
 const unsavedChanges = useUnsavedChangesController()
 const theme = useTheme()
@@ -181,6 +183,11 @@ watch(
       </div>
     </header>
 
+    <div v-if="demoCountdown" class="app-recording-notice" aria-live="off">
+      <InlineFeedback class="app-recording-notice__message" tone="warning" aria-live="off">
+        {{ t('shell.demoNotice', { time: demoCountdown }) }}
+      </InlineFeedback>
+    </div>
     <div v-if="requestBodyRecording" class="app-recording-notice">
       <InlineFeedback class="app-recording-notice__message" tone="warning">
         {{ t('shell.requestBodyRecordingNotice', { days: requestBodyRecording.retentionDays }) }}
