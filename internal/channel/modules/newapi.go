@@ -47,6 +47,8 @@ func NewAPI() spec.Module {
 				spec.NewRoute(protocol.OpenAIEmbeddings, execution.OperationProbe, execution.RouteNative),
 				spec.NewRoute(protocol.Anthropic, execution.OperationChatCompletion, execution.RouteNative),
 				spec.NewRoute(protocol.Anthropic, execution.OperationProbe, execution.RouteNative),
+				// Claude Code 每轮调用 /v1/messages/count_tokens，缺这条路由会落到 503。
+				spec.NewRoute(protocol.Anthropic, execution.OperationCountTokens, execution.RouteNative),
 				spec.NewRoute(protocol.Gemini, execution.OperationChatCompletion, execution.RouteNative),
 				spec.NewRoute(protocol.Gemini, execution.OperationProbe, execution.RouteNative),
 				spec.NewRoute(protocol.GeminiEmbeddings, execution.OperationEmbeddingsCreate, execution.RouteNative),

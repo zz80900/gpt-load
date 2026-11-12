@@ -255,6 +255,42 @@ func routeReason(t *testing.T, snapshot *state.ConfigSnapshot, model string) Rea
 	return got.Reason
 }
 
+// Claude Code 每轮调用 /v1/messages/count_tokens。New API 渠道缺这条路由时，调度层对
+// (Anthropic, count_tokens) 返回 operation_unsupported，请求最终以 503
+// no_available_candidate 返回，且没有任何上游尝试。
+func TestInspectRoutesAnthropicCountTokensOnNewAPI(t *testing.T) {
+	t.Parallel()
+
+	snapshot, err := state.Compile(state.CompileInput{
+		ChannelRegistry: channel.NewRegistry(),
+		Groups: []state.GroupConfig{
+			{ConnectionType: "api_key", ID: 1, Name: "newapi", ChannelID: channel.NewAPI,
+				Params: json.RawMessage(`{"base_url":"https://relay.example"}`),
+				Models: []state.ModelConfig{{
+					ID: "gpt-6.1-sol", Aliases: []string{"claude-gpt-6.1-sol"},
+				}},
+				Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	got, err := Inspect(snapshot, nil, Query{
+		ClientProtocol:   protocol.Anthropic,
+		Operation:        execution.OperationCountTokens,
+		RouteRequirement: execution.RouteRequirementAny,
+		ExternalModel:    modelPointer("claude-gpt-6.1-sol"),
+		AccessKey:        state.AccessKeyView{Status: state.AccessKeyStatusActive},
+	}, inspectNow())
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if len(got.Groups) != 1 || !got.Groups[0].Included || got.Groups[0].UpstreamModelID == nil ||
+		*got.Groups[0].UpstreamModelID != "gpt-6.1-sol" {
+		t.Fatalf("Inspect() = %#v, want the New API group with upstream model gpt-6.1-sol", got)
+	}
+}
+
 // 通配符别名的核心场景：一个上游接住一整类客户端模型名。别名 claude-*[1m] 同时以自身
 // 与剥掉上下文后缀的 claude-* 匹配，因此带后缀与不带后缀的请求名都要命中。
 //

@@ -83,6 +83,7 @@ func TestNewAPIChannelContract(t *testing.T) {
 		protocol.Anthropic: {
 			execution.OperationProbe:          RouteNative,
 			execution.OperationChatCompletion: RouteNative,
+			execution.OperationCountTokens:    RouteNative,
 		},
 		protocol.Gemini: {
 			execution.OperationProbe:          RouteNative,
