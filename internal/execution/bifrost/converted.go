@@ -463,7 +463,7 @@ func convertedTypedTarget(
 	var resourcePath string
 	var upstreamProtocol protocol.Protocol
 	switch providerKind {
-	case channel.ProviderOpenAI, channel.ProviderOpenAICompatible:
+	case channel.ProviderOpenAI, channel.ProviderOpenAICompatible, channel.ProviderAlibaba:
 		resourcePath = "/chat/completions"
 		upstreamProtocol = protocol.OpenAICompletions
 		// Compatible targets are configured with Chat Completions only. Bifrost
@@ -565,7 +565,7 @@ func convertedListModelsTarget(providerKind channel.ProviderKind, baseURL string
 		resourcePath = "/models"
 	case channel.ProviderOpenRouter, channel.ProviderGroq, channel.ProviderXAI:
 		resourcePath = "/v1/models"
-	case channel.ProviderOpenAICompatible:
+	case channel.ProviderOpenAICompatible, channel.ProviderAlibaba:
 		if baseURL == "" {
 			return "", "", fmt.Errorf("compatible target is required")
 		}

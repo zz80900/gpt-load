@@ -86,6 +86,8 @@ func NewAdapter(credentials *subscription.CredentialManager, channels *channel.R
 			newClaudeProviderBridge(),
 			newAntigravityProviderBridge(),
 			newGrokProviderBridge(),
+			newMuseProviderBridge(),
+			newDevinProviderBridge(),
 		),
 	}
 }
@@ -359,6 +361,9 @@ func (a *Adapter) ExecuteStream(
 	firstByte := startFirstByteGate(spec.Timeouts.FirstByte, cancelStream)
 	defer firstByte.stop()
 	streamCtx = subscriptionproviders.WithStreamBodyObserver(streamCtx, func(body io.ReadCloser, header http.Header) io.ReadCloser {
+		if observer, ok := provider.(providerStreamBodyObserver); ok {
+			return observer.ObserveStreamBody(streamCtx, body, header)
+		}
 		return observeStreamBody(streamCtx, body, header.Get("Content-Encoding"))
 	})
 	response, err := provider.ExecuteStream(streamCtx, strconv.FormatUint(uint64(spec.Credential.ID), 10), credential, request)
@@ -391,6 +396,7 @@ func (a *Adapter) ExecuteStream(
 	modelObserver := responsemodel.New(spec.ClientProtocol, spec.UpstreamModel)
 	openAIDone := false
 	geminiTerminal := false
+	incomplete := false
 	var nativeResponsesAssembler *nativeResponsesSSEAssembler
 	var codexBootstrap *codexBootstrapBuffer
 	if spec.ClientProtocol == protocol.OpenAIResponses && spec.RouteMode == execution.RouteNative {
@@ -480,7 +486,9 @@ func (a *Adapter) ExecuteStream(
 				}
 			}
 			modelObserver.FinishSSE()
-			return successfulStreamTerminal(upstreamProtocol, modelObserver.Model, headers, applied)
+			result := successfulStreamTerminal(upstreamProtocol, modelObserver.Model, headers, applied)
+			result.Incomplete = incomplete
+			return result
 		}
 		if chunk.Err != nil {
 			if codexBootstrap != nil && !codexBootstrap.released && len(chunk.Payload) == 0 &&
@@ -499,6 +507,7 @@ func (a *Adapter) ExecuteStream(
 			}
 			return streamExecutionError(streamCtx, provider, upstreamProtocol, headers, chunk.Err, credential, applied, ready)
 		}
+		incomplete = incomplete || chunk.Incomplete
 		if len(chunk.Payload) == 0 && nativeResponsesAssembler == nil {
 			continue
 		}
