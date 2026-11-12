@@ -203,3 +203,25 @@ modern 分组列表此前只在 priority 模式把未启用分组置后，默认
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: New API Anthropic count_tokens 503 fix
+
+**Date**: 2026-11-12
+**Task**: New API Anthropic count_tokens 503 fix
+**Branch**: `main`
+
+### Summary
+
+Diagnosed Claude Code's per-turn /v1/messages/count_tokens 503s as a missing (Anthropic, count_tokens) route in the New API channel; added the native route, a scheduler regression test, updated the route golden digest, and recorded the channel route coverage spec.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b423e94` | (see git log) |
+| `dd44d9a9` | (see git log) |
+
+### Status
+
+[OK] **Completed**
