@@ -225,3 +225,25 @@ Diagnosed Claude Code's per-turn /v1/messages/count_tokens 503s as a missing (An
 ### Status
 
 [OK] **Completed**
+
+
+## Session 11: Group create model save failure fix
+
+**Date**: 2026-11-12
+**Task**: Group create model save failure fix
+**Branch**: `main`
+
+### Summary
+
+Modern group creation failed before dispatch whenever a model row existed: begin() called structuredClone on a payload containing Vue-reactive aliases arrays, which throws DataCloneError; the panel swallowed it as a generic create failure. Switched the shared boundary to a JSON round-trip clone, verified with a Node repro, type-check and eslint, and recorded the frontend spec.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `325ca357` | (see git log) |
+| `2f61ee06` | (see git log) |
+
+### Status
+
+[OK] **Completed**
