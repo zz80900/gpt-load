@@ -19,6 +19,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Request Log Pipeline](./request-log-pipeline.md) | Six-layer field contract for request logs | Filled |
 | [Model Name Contract](./model-name-contract.md) | Three name sets, context-suffix canonicalization, collision policy, detail-response count contract, frontend shared alias module | Filled |
 | [Converted Route Fields](./converted-route-fields.md) | Field semantics across protocol conversion: fast-mode carriers, ExtraParams passthrough, shared native/converted builder | Filled |
+| [Channel Route Coverage](./channel-route-coverage.md) | Channel route tables must cover every operation the client protocol emits; missing pairs become zero-attempt 503s | Filled |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
