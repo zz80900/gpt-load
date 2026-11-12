@@ -59,7 +59,13 @@ export function useGroupCreateOperation(client: ApiClient) {
   }
   function begin(payload: Submission): void {
     if (operation.value) return
-    operation.value = { key: createOperationKey(), payload: structuredClone(payload) }
+    // 载荷本身就是 JSON wire 数据。Vue 的深层响应式对象是 Proxy，
+    // structuredClone 遇到模型行的 aliases 数组会抛 DataCloneError；JSON 往返
+    // 保留「冻结重试载荷」语义，同时不受 Proxy 影响。
+    operation.value = {
+      key: createOperationKey(),
+      payload: JSON.parse(JSON.stringify(payload)) as Submission,
+    }
     outcome.value = undefined
   }
   async function execute(): Promise<Outcome | undefined> {
