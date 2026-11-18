@@ -127,13 +127,23 @@ func buildConvertedResponsesRequest(spec execution.AttemptSpec, provider schemas
 	if request.Params == nil {
 		request.Params = &schemas.ResponsesParameters{}
 	}
+	stripResponsesControlParams(request.Params)
 	if err := mergeConvertedParameterOverrides(spec, &request.Params.ExtraParams); err != nil {
 		return nil, err
 	}
-	stripResponsesControlParams(request.Params)
 	// 原生 openai-responses 路由（不支持透传的上游）同样复用本构造，fast 映射仅限转换路由。
+	// 必须早于 OpenRouter 的 provider 白名单过滤：fast 模式要先消费掉 speed 扩展参数。
 	if spec.RouteMode == execution.RouteConverted {
 		applyConvertedFastMode(request)
+	}
+	if spec.RouteMode == execution.RouteConverted && spec.ChannelID == string(channel.OpenRouter) {
+		// Only provider preferences use extra-parameter passthrough. The SDK
+		// still prepares and serializes the typed request before merging them.
+		preferences, exists := request.Params.ExtraParams["provider"]
+		request.Params.ExtraParams = nil
+		if exists {
+			request.Params.ExtraParams = map[string]any{"provider": preferences}
+		}
 	}
 	return request, nil
 }

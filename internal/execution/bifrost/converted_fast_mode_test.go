@@ -25,7 +25,7 @@ func convertedFastModeUpstreamBody(t *testing.T, spec execution.AttemptSpec) map
 	defer ctx.Cancel()
 	// 打开扩展参数透传：否则该路径默认不合并 extras，"上游 body 不含 speed" 的断言将形同虚设。
 	ctx.SetValue(schemas.BifrostContextKeyPassthroughExtraParams, true)
-	wire, sdkErr := providerUtils.CheckContextAndGetRequestBody(ctx, request, func() (providerUtils.RequestBodyWithExtraParams, error) {
+	wire, sdkErr := providerUtils.CheckContextAndGetRequestBody(ctx, request, func() (*openai.OpenAIResponsesRequest, error) {
 		return openai.ToOpenAIResponsesRequest(ctx, request), nil
 	})
 	if sdkErr != nil {

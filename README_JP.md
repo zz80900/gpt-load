@@ -29,16 +29,6 @@ API キー、サブスクリプションアカウント、トラフィック制�
 <details open>
 <summary>スポンサー詳細（折りたたみ可能）</summary>
 
-<a href="https://modelflare.dev/sign-up?utm_source=github&amp;utm_campaign=gptload" target="_blank" rel="sponsored noopener noreferrer"><img src="./screenshot/modelflare-banner-ja.png" alt="Modelflare"></a>
-
-本プロジェクトをご支援いただいている Modelflare に感謝します！Modelflare：フルスペック、安定、水増しなし。世界の SOTA モデルを、より低いコストで。米国拠点の Havenbyte LLC が運営する Modelflare は、一般的な互換プロトコルを通じて GPT、Claude、Gemini、Grok などの主要モデルに対応し、さらに 40 以上の画像・動画モデルも利用できます。
-
-注目は**キャッシュ補償**です。対象の OpenAI グループ（価格優先・安定・プレミアム）は、1 日のキャッシュヒット率をそれぞれ 65%、75%、85% で保証します。対象リクエストがこの水準に達しない場合、Modelflare が差額を返金し、精算後に利用状況ダッシュボードで確認できます。
-
-**特別オファー**：US&#36;20 を 1 回チャージすると、価格倍率 0.015 倍の GPT 割引グループが解放されます。US&#36;50 を 1 回チャージすると、価格倍率 0.03 倍の Claude 割引グループが解放されます。<a href="https://modelflare.dev/sign-up?utm_source=github&amp;utm_campaign=gptload" target="_blank" rel="sponsored noopener noreferrer">こちらの専用リンク</a>から登録して始めましょう。
-
----
-
 <table>
 <tbody>
 <tr>
@@ -252,6 +242,7 @@ Windows の一般ユーザーは代わりに `gpt-load-windows-setup.exe` を利
 | `HTTP_PROXY` | 空 | HTTP アップストリームリクエストの環境プロキシ。 |
 | `HTTPS_PROXY` | 空 | HTTPS アップストリームリクエストの環境プロキシ。 |
 | `NO_PROXY` | 空 | 環境プロキシをバイパスするホスト、ドメイン、IP のカンマ区切りリスト。 |
+| `UPSTREAM_USER_AGENT_FALLBACK` | 空、`GPT-Load/<version>` を使用 | 通常チャネルの API リクエスト、認証情報テスト、モデル検出、Responses WebSocket ハンドシェイク用のフォールバック User-Agent。ヘッダールール適用後の UA が未指定・空・空白のみの場合に使用し、ルールやクライアントの空でない UA は維持します。例：`Go-http-client/1.1`（HTTP プロトコルに依存しない固定値）。サブスクリプションアダプターの識別情報は変更しません。変更後は再起動が必要です。 |
 | `LOG_LEVEL` | `info` | `panic`、`fatal`、`error`、`warn`、`warning`、`info`、`debug`、`trace` に対応します。無効な値は警告を出して `info` に戻ります。 |
 | `LOG_FORMAT` | `text` | `text` と `json` に対応します。それ以外の値では起動に失敗します。 |
 | `MODELS_DEV_AUTO_SYNC_ENABLED` | 未設定、初期既定値 `true` | 未設定時は管理画面に保存された設定を使用します。設定時は Models.dev の自動同期を強制的に有効または無効にし、管理画面の同名オプションを読み取り専用にします。 |

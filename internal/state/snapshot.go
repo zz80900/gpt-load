@@ -738,8 +738,8 @@ func appendExecutionTargets(
 				for _, registration := range registrations {
 					modelMode, supported := target.ModeForModel(clientProtocol, operation, registration.upstreamID)
 					if !supported {
-						return fmt.Errorf("compile group %d channel has no route mode for %q/%q model %q",
-							group.ID, clientProtocol, operation, registration.upstreamID)
+						// 模型相关路由可排除当前模型，不影响分组中的其他模型和协议。
+						continue
 					}
 					routeTarget := RouteTarget{
 						GroupID: group.ID, UpstreamModelID: registration.upstreamID,
